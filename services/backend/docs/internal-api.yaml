@@ -1,0 +1,1421 @@
+openapi: 3.0.0
+info:
+  title: LaunchDate Internal API
+  description: Internal/admin API definitions for LaunchDate backend.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local Development Server
+
+tags:
+  - name: auth
+    description: Authentication endpoints
+  - name: data
+    description: Admin data management endpoints
+  - name: images
+    description: Image management endpoints
+  - name: task
+    description: Single sync task control endpoints
+  - name: ll2
+    description: LL2 raw data and migration compatibility endpoints
+
+paths:
+  /api/v1/auth/bootstrap:
+    post:
+      tags: [auth]
+      summary: Bootstrap initial user
+      description: Create the first user when no user exists.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BootstrapRequest'
+      responses:
+        '200':
+          description: Bootstrap success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BootstrapResponse'
+        '400':
+          description: Invalid request body
+        '403':
+          description: Bootstrap disabled
+        '500':
+          description: Internal error
+
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      summary: Login
+      description: Authenticate with username/password and set refresh token cookie.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login success
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: HttpOnly refresh token cookie.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Invalid request body
+        '401':
+          description: Invalid credentials
+        '500':
+          description: Internal server error
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [auth]
+      summary: Refresh access token
+      description: Issue a new access token using refresh token cookie.
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Refresh success
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: Rotated refresh token cookie.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+        '401':
+          description: Missing/invalid refresh token
+        '500':
+          description: Internal server error
+
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      summary: Logout
+      description: Revoke refresh token (if present) and clear refresh cookie.
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Logout success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /api/v1/auth/me:
+    get:
+      tags: [auth]
+      summary: Get current user
+      description: Retrieve current user from refresh token cookie.
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+
+  /api/v1/data/stats:
+    get:
+      tags: [data]
+      summary: Get stats
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseStats'
+
+  /api/v1/data/rockets:
+    get:
+      tags: [data]
+      summary: Get rockets
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OffsetQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: sort_by
+          schema:
+            type: string
+        - in: query
+          name: sort_order
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
+        - in: query
+          name: full_name
+          schema:
+            type: string
+        - in: query
+          name: name
+          schema:
+            type: string
+        - in: query
+          name: variant
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseRocketList'
+
+  /api/v1/data/rockets/{id}:
+    get:
+      tags: [data]
+      summary: Get rocket by id
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseRocketSerializer'
+    put:
+      tags: [data]
+      summary: Update rocket by id
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseNoData'
+
+  /api/v1/data/agencies:
+    get:
+      tags: [data]
+      summary: Get agencies
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OffsetQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: sort_by
+          schema:
+            type: string
+        - in: query
+          name: sort_order
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
+        - in: query
+          name: name
+          schema:
+            type: string
+        - in: query
+          name: type
+          schema:
+            type: string
+        - in: query
+          name: country
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseAgencyList'
+
+  /api/v1/data/agencies/{id}:
+    get:
+      tags: [data]
+      summary: Get agency by id
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseAgencySerializer'
+    put:
+      tags: [data]
+      summary: Update agency by id
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseNoData'
+
+  /api/v1/data/launchbases:
+    get:
+      tags: [data]
+      summary: Get launch bases
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OffsetQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: sort_by
+          schema:
+            type: string
+        - in: query
+          name: sort_order
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
+        - in: query
+          name: name
+          schema:
+            type: string
+        - in: query
+          name: celestial_body
+          schema:
+            type: string
+        - in: query
+          name: country
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseLaunchBaseList'
+
+  /api/v1/data/launchbases/{id}:
+    get:
+      tags: [data]
+      summary: Get launch base by id
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseLaunchBaseSerializer'
+
+  /api/v1/data/launches:
+    get:
+      tags: [data]
+      summary: Get launches
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OffsetQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: sort_by
+          schema:
+            type: string
+            default: time
+        - in: query
+          name: sort_order
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
+        - in: query
+          name: name
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: launch_service_provider
+          schema:
+            type: string
+        - in: query
+          name: rocket
+          schema:
+            type: string
+        - in: query
+          name: mission
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseLaunchList'
+
+  /api/v1/data/launches/{id}:
+    get:
+      tags: [data]
+      summary: Get launch by id
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseLaunchSerializer'
+    put:
+      tags: [data]
+      summary: Update launch by id
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseNoData'
+
+  /api/v1/images:
+    get:
+      tags: [images]
+      summary: List images
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OffsetQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseImageList'
+    post:
+      tags: [images]
+      summary: Upload image
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseImageUpload'
+
+  /api/v1/images/thumb:
+    post:
+      tags: [images]
+      summary: Generate thumbnail
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateThumbRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseStringData'
+
+  /api/v1/images/{key}:
+    delete:
+      tags: [images]
+      summary: Delete image by key
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: key
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseStringData'
+
+  /api/v1/task:
+    get:
+      tags: [task]
+      summary: Get current task
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseTaskInfoNullable'
+    post:
+      tags: [task]
+      summary: Start sync task
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartTaskRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseNoData'
+
+  /api/v1/task/action:
+    post:
+      tags: [task]
+      summary: Control current task
+      description: Apply action to current single task. Supported actions are pause, resume, cancel.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskActionRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseNoData'
+
+  /api/v1/ll2/launches:
+    get:
+      tags: [ll2]
+      summary: List LL2 launches from DB
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OffsetQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseLL2LaunchList'
+
+  /api/v1/ll2/launches/update:
+    post:
+      tags: [ll2]
+      summary: Start LL2 launch update
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseNoData'
+
+  /api/v1/ll2/angecies:
+    get:
+      tags: [ll2]
+      summary: List LL2 agencies from DB
+      description: Path spelling follows current server implementation.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OffsetQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseLL2AgencyList'
+
+  /api/v1/ll2/angecies/update:
+    post:
+      tags: [ll2]
+      summary: Start LL2 agency update
+      description: Path spelling follows current server implementation.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseNoData'
+
+  /api/v1/ll2/launcher-families:
+    get:
+      tags: [ll2]
+      summary: List LL2 launcher families from DB
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OffsetQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseLL2LauncherFamilyList'
+
+  /api/v1/ll2/launcher-families/update:
+    post:
+      tags: [ll2]
+      summary: Start LL2 launcher family update
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseNoData'
+
+  /api/v1/ll2/launchers:
+    get:
+      tags: [ll2]
+      summary: List LL2 launchers from DB
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OffsetQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseLL2LauncherList'
+
+  /api/v1/ll2/launchers/update:
+    post:
+      tags: [ll2]
+      summary: Start LL2 launcher update
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseNoData'
+
+  /api/v1/ll2/locations:
+    get:
+      tags: [ll2]
+      summary: List LL2 locations from DB
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OffsetQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseLL2LocationList'
+
+  /api/v1/ll2/locations/update:
+    post:
+      tags: [ll2]
+      summary: Start LL2 location update
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseNoData'
+
+  /api/v1/ll2/pads:
+    get:
+      tags: [ll2]
+      summary: List LL2 pads from DB
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OffsetQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseLL2PadList'
+
+  /api/v1/ll2/pads/update:
+    post:
+      tags: [ll2]
+      summary: Start LL2 pad update
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ApiResponseNoData'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: refreshToken
+
+  parameters:
+    OffsetQuery:
+      in: query
+      name: offset
+      schema:
+        type: integer
+        default: 0
+      description: Pagination offset.
+    LimitQuery:
+      in: query
+      name: limit
+      schema:
+        type: integer
+        default: 10
+      description: Pagination limit.
+    IdPath:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: integer
+        format: int64
+
+  responses:
+    ApiResponseNoData:
+      description: API response envelope without data payload.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseNoData'
+    ApiResponseStringData:
+      description: API response envelope with string data.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseStringData'
+    ApiResponseStats:
+      description: API response envelope with stats.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseStatsData'
+    ApiResponseRocketList:
+      description: API response envelope with rocket list.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseRocketListData'
+    ApiResponseRocketSerializer:
+      description: API response envelope with rocket detail.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseRocketSerializerData'
+    ApiResponseAgencyList:
+      description: API response envelope with agency list.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseAgencyListData'
+    ApiResponseAgencySerializer:
+      description: API response envelope with agency detail.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseAgencySerializerData'
+    ApiResponseLaunchBaseList:
+      description: API response envelope with launch base list.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseLaunchBaseListData'
+    ApiResponseLaunchBaseSerializer:
+      description: API response envelope with launch base detail.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseLaunchBaseSerializerData'
+    ApiResponseLaunchList:
+      description: API response envelope with launch list.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseLaunchListData'
+    ApiResponseLaunchSerializer:
+      description: API response envelope with launch detail.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseLaunchSerializerData'
+    ApiResponseImageList:
+      description: API response envelope with image list.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseImageListData'
+    ApiResponseImageUpload:
+      description: API response envelope with uploaded image key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseImageUploadData'
+    ApiResponseTaskInfoNullable:
+      description: API response envelope with nullable current task.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseTaskInfoNullableData'
+    ApiResponseLL2LaunchList:
+      description: API response envelope with LL2 launch list.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseLL2LaunchListData'
+    ApiResponseLL2AgencyList:
+      description: API response envelope with LL2 agency list.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseLL2AgencyListData'
+    ApiResponseLL2LauncherList:
+      description: API response envelope with LL2 launcher list.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseLL2LauncherListData'
+    ApiResponseLL2LauncherFamilyList:
+      description: API response envelope with LL2 launcher family list.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseLL2LauncherFamilyListData'
+    ApiResponseLL2LocationList:
+      description: API response envelope with LL2 location list.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseLL2LocationListData'
+    ApiResponseLL2PadList:
+      description: API response envelope with LL2 pad list.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseLL2PadListData'
+
+  schemas:
+    ApiResponseBase:
+      type: object
+      properties:
+        code:
+          type: integer
+          description: Business code; 0 for success, 1 for failure.
+        message:
+          type: string
+      required: [code, message]
+
+    ApiResponseNoData:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+    ApiResponseStringData:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              type: string
+          required: [data]
+    ApiResponseStatsData:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Stats'
+          required: [data]
+    ApiResponseRocketListData:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/RocketList'
+          required: [data]
+    ApiResponseRocketSerializerData:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/RocketSerializer'
+          required: [data]
+    ApiResponseAgencyListData:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/AgencyList'
+          required: [data]
+    ApiResponseAgencySerializerData:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/AgencySerializer'
+          required: [data]
+    ApiResponseLaunchBaseListData:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/LaunchBaseList'
+          required: [data]
+    ApiResponseLaunchBaseSerializerData:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/LaunchBaseSerializer'
+          required: [data]
+    ApiResponseLaunchListData:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/LaunchList'
+          required: [data]
+    ApiResponseLaunchSerializerData:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/LaunchSerializer'
+          required: [data]
+    ApiResponseImageListData:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/ImageList'
+          required: [data]
+    ApiResponseImageUploadData:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/ImageUploadResult'
+          required: [data]
+    ApiResponseTaskInfoNullableData:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              nullable: true
+              $ref: '#/components/schemas/TaskInfo'
+    ApiResponseLL2LaunchListData:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/LL2LaunchList'
+          required: [data]
+    ApiResponseLL2AgencyListData:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/LL2AgencyList'
+          required: [data]
+    ApiResponseLL2LauncherListData:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/LL2LauncherList'
+          required: [data]
+    ApiResponseLL2LauncherFamilyListData:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/LL2LauncherFamilyList'
+          required: [data]
+    ApiResponseLL2LocationListData:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/LL2LocationList'
+          required: [data]
+    ApiResponseLL2PadListData:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/LL2PadList'
+          required: [data]
+
+    Stats:
+      type: object
+      properties:
+        rocket:
+          type: integer
+        launch:
+          type: integer
+        agency:
+          type: integer
+        launch_base:
+          type: integer
+        ll2:
+          $ref: '#/components/schemas/LL2Stats'
+      required: [rocket, launch, agency, launch_base, ll2]
+
+    LL2Stats:
+      type: object
+      properties:
+        launches:
+          type: integer
+        agencies:
+          type: integer
+        launchers:
+          type: integer
+        launcher_families:
+          type: integer
+        locations:
+          type: integer
+        pads:
+          type: integer
+      required: [launches, agencies, launchers, launcher_families, locations, pads]
+
+    SocialUrl:
+      type: object
+      properties:
+        name:
+          type: string
+        url:
+          type: string
+      required: [name, url]
+
+    Agency:
+      type: object
+      properties:
+        id:
+          type: string
+        external_id:
+          type: integer
+          format: int64
+        thumb_image:
+          type: string
+        images:
+          type: array
+          items:
+            type: string
+        social_url:
+          type: array
+          items:
+            $ref: '#/components/schemas/SocialUrl'
+      required: [id, external_id, thumb_image, images, social_url]
+    AgencySerializer:
+      type: object
+      properties:
+        id:
+          type: string
+        external_id:
+          type: integer
+          format: int64
+        thumb_image:
+          type: string
+        images:
+          type: array
+          items:
+            type: string
+        social_url:
+          type: array
+          items:
+            $ref: '#/components/schemas/SocialUrl'
+        data:
+          $ref: '#/components/schemas/LL2AgencyNormal'
+      required: [id, external_id, thumb_image, images, social_url, data]
+    AgencyList:
+      type: object
+      properties:
+        count:
+          type: integer
+        agencies:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgencySerializer'
+      required: [count, agencies]
+
+    Rocket:
+      type: object
+      properties:
+        id:
+          type: string
+        external_id:
+          type: integer
+          format: int64
+        launch_image:
+          type: string
+        main_image:
+          type: string
+        thumb_image:
+          type: string
+        image_list:
+          type: array
+          items:
+            type: string
+      required: [id, external_id, launch_image, main_image, thumb_image, image_list]
+    RocketSerializer:
+      allOf:
+        - $ref: '#/components/schemas/Rocket'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/LL2LauncherConfigNormal'
+          required: [data]
+    RocketList:
+      type: object
+      properties:
+        count:
+          type: integer
+        rockets:
+          type: array
+          items:
+            $ref: '#/components/schemas/RocketSerializer'
+      required: [count, rockets]
+
+    Launch:
+      type: object
+      properties:
+        id:
+          type: string
+        external_id:
+          type: string
+        background_image:
+          type: string
+        image_list:
+          type: array
+          items:
+            type: string
+        thumb_image:
+          type: string
+      required: [id, external_id, background_image, image_list, thumb_image]
+    LaunchSerializer:
+      allOf:
+        - $ref: '#/components/schemas/Launch'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/LL2LaunchNormal'
+          required: [data]
+    LaunchList:
+      type: object
+      properties:
+        count:
+          type: integer
+        launches:
+          type: array
+          items:
+            $ref: '#/components/schemas/LaunchSerializer'
+      required: [count, launches]
+
+    LaunchBaseSerializer:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        data:
+          $ref: '#/components/schemas/LL2LocationSerializerWithPads'
+      required: [id, data]
+    LaunchBaseList:
+      type: object
+      properties:
+        count:
+          type: integer
+        launches:
+          type: array
+          items:
+            $ref: '#/components/schemas/LaunchBaseSerializer'
+      required: [count, launches]
+
+    ThumbImage:
+      type: object
+      properties:
+        key:
+          type: string
+        url:
+          type: string
+        width:
+          type: integer
+        height:
+          type: integer
+        size:
+          type: integer
+          format: int64
+        content_type:
+          type: string
+        upload_time:
+          type: string
+          format: date-time
+      required: [key, url, width, height, size, content_type, upload_time]
+    Image:
+      type: object
+      properties:
+        id:
+          type: string
+        key:
+          type: string
+        url:
+          type: string
+        name:
+          type: string
+        width:
+          type: integer
+        height:
+          type: integer
+        size:
+          type: integer
+          format: int64
+        content_type:
+          type: string
+        upload_time:
+          type: string
+          format: date-time
+        thumb_images:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThumbImage'
+      required: [id, key, url, name, width, height, size, content_type, upload_time, thumb_images]
+    ImageList:
+      type: object
+      properties:
+        count:
+          type: integer
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/Image'
+      required: [count, images]
+    ImageUploadResult:
+      type: object
+      properties:
+        key:
+          type: string
+      required: [key]
+
+    LL2LaunchNormal:
+      type: object
+      additionalProperties: true
+    LL2AgencyNormal:
+      type: object
+      additionalProperties: true
+    LL2AgencyDetailed:
+      type: object
+      additionalProperties: true
+    LL2LauncherConfigNormal:
+      type: object
+      additionalProperties: true
+    LL2LauncherConfigFamilyDetailed:
+      type: object
+      additionalProperties: true
+    LL2LocationSerializerWithPads:
+      type: object
+      additionalProperties: true
+    LL2Pad:
+      type: object
+      additionalProperties: true
+
+    LL2LaunchList:
+      type: object
+      properties:
+        count:
+          type: integer
+        launches:
+          type: array
+          items:
+            $ref: '#/components/schemas/LL2LaunchNormal'
+      required: [count, launches]
+    LL2AgencyList:
+      type: object
+      properties:
+        count:
+          type: integer
+        agencies:
+          type: array
+          items:
+            $ref: '#/components/schemas/LL2AgencyDetailed'
+      required: [count, agencies]
+    LL2LauncherList:
+      type: object
+      properties:
+        count:
+          type: integer
+        launchers:
+          type: array
+          items:
+            $ref: '#/components/schemas/LL2LauncherConfigNormal'
+      required: [count, launchers]
+    LL2LauncherFamilyList:
+      type: object
+      properties:
+        count:
+          type: integer
+        families:
+          type: array
+          items:
+            $ref: '#/components/schemas/LL2LauncherConfigFamilyDetailed'
+      required: [count, families]
+    LL2LocationList:
+      type: object
+      properties:
+        count:
+          type: integer
+        locations:
+          type: array
+          items:
+            $ref: '#/components/schemas/LL2LocationSerializerWithPads'
+      required: [count, locations]
+    LL2PadList:
+      type: object
+      properties:
+        count:
+          type: integer
+        pads:
+          type: array
+          items:
+            $ref: '#/components/schemas/LL2Pad'
+      required: [count, pads]
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required: [message]
+
+    BootstrapRequest:
+      type: object
+      required: [username, email, password, role]
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        role:
+          type: string
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    LoginResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+      required: [accessToken]
+
+    RefreshResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+      required: [accessToken]
+
+    BootstrapResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+      required: [message, user]
+
+    MeResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+      required: [user]
+
+    GenerateThumbRequest:
+      type: object
+      required: [id, width, height]
+      properties:
+        id:
+          type: string
+          description: Resource ID in string format.
+        width:
+          type: integer
+        height:
+          type: integer
+
+    StartTaskRequest:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [launch, agency, launcher, launcher_family, pad, location, upcoming]
+
+    TaskActionRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [pause, resume, cancel]
+
+    TaskInfo:
+      type: object
+      properties:
+        type:
+          type: string
+        status:
+          type: string
+          enum: [idle, running, paused, failed]
+        progress:
+          type: object
+          additionalProperties: true
+        last_error:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [type, status, started_at, updated_at]

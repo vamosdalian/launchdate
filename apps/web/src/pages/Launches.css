@@ -1,0 +1,140 @@
+.launches-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.launches-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.launch-card {
+  background: white;
+  border-radius: 12px;
+  padding: 2rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.launch-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+}
+
+.launch-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.launch-date {
+  display: flex;
+  flex-direction: column;
+}
+
+.date-label {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin-bottom: 0.25rem;
+}
+
+.date-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.launch-status {
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-scheduled {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.status-successful {
+  background-color: #dcfce7;
+  color: #15803d;
+}
+
+.status-failed {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.status-cancelled {
+  background-color: #f3f4f6;
+  color: #4b5563;
+}
+
+.launch-card h2 {
+  font-size: 1.75rem;
+  color: #1e293b;
+  margin-bottom: 1.5rem;
+}
+
+.launch-details {
+  display: flex;
+  gap: 2rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.detail-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.detail-icon {
+  font-size: 1.5rem;
+}
+
+.detail-label {
+  display: block;
+  font-size: 0.875rem;
+  color: #64748b;
+  margin-bottom: 0.25rem;
+}
+
+.detail-value {
+  display: block;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.launch-description {
+  color: #64748b;
+  line-height: 1.6;
+  padding-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+@media (max-width: 768px) {
+  .launches-page {
+    padding: 1rem;
+  }
+
+  .launch-card {
+    padding: 1.5rem;
+  }
+
+  .launch-card h2 {
+    font-size: 1.5rem;
+  }
+
+  .launch-details {
+    flex-direction: column;
+    gap: 1rem;
+  }
+}

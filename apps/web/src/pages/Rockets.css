@@ -1,0 +1,123 @@
+.rockets-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.page-header {
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
+.page-header h1 {
+  font-size: 2.5rem;
+  color: #1e293b;
+  margin-bottom: 0.5rem;
+}
+
+.page-header p {
+  color: #64748b;
+  font-size: 1.1rem;
+}
+
+.rockets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 2rem;
+}
+
+.rocket-card {
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.rocket-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+}
+
+.rocket-image {
+  position: relative;
+  height: 300px;
+  overflow: hidden;
+  background-color: #f1f5f9;
+}
+
+.rocket-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.active-badge {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background-color: #22c55e;
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.rocket-content {
+  padding: 1.5rem;
+}
+
+.rocket-content h2 {
+  font-size: 1.75rem;
+  color: #1e293b;
+  margin-bottom: 0.25rem;
+}
+
+.rocket-company {
+  color: #3b82f6;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+.rocket-description {
+  color: #64748b;
+  line-height: 1.6;
+  margin-bottom: 1.5rem;
+}
+
+.rocket-specs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.spec-item {
+  display: flex;
+  flex-direction: column;
+  text-align: center;
+}
+
+.spec-label {
+  font-size: 0.875rem;
+  color: #64748b;
+  margin-bottom: 0.25rem;
+}
+
+.spec-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+@media (max-width: 768px) {
+  .rockets-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .page-header h1 {
+    font-size: 2rem;
+  }
+}
