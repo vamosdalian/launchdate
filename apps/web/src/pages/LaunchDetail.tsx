@@ -9,6 +9,7 @@ import {
   CarouselPrevious,
 } from "@/components/ui/carousel"
 import { useEffect, useState, useCallback } from 'react';
+import { CircleMarker, MapContainer, TileLayer, Tooltip } from 'react-leaflet';
 import { useApi } from '../hooks/useApi';
 import { fetchRocketLaunch } from '../services/launchesService';
 
@@ -17,6 +18,8 @@ const LaunchDetail = () => {
   
   const fetchLaunchCallback = useCallback(() => fetchRocketLaunch(id!), [id]);
   const { data: launch, loading: launchLoading, error: launchError } = useApi(fetchLaunchCallback);
+  const [companyImageFailed, setCompanyImageFailed] = useState(false);
+  const [rocketImageFailed, setRocketImageFailed] = useState(false);
 
   // Countdown state
   const [countdown, setCountdown] = useState({
@@ -28,7 +31,7 @@ const LaunchDetail = () => {
 
   // Update countdown every second
   useEffect(() => {
-    if (!launch || launch.status !== 1) return; // 1 is scheduled
+    if (!launch || launch.status !== 'scheduled') return;
 
     const updateCountdown = () => {
       const launchDate = new Date(launch.launch_time).getTime();
@@ -53,9 +56,17 @@ const LaunchDetail = () => {
     return () => clearInterval(interval);
   }, [launch]);
 
+  useEffect(() => {
+    setCompanyImageFailed(false);
+  }, [launch?.company?.id, launch?.company?.image_url]);
+
+  useEffect(() => {
+    setRocketImageFailed(false);
+  }, [launch?.rocket?.id, launch?.rocket?.image_url, launch?.rocket?.thumb_image]);
+
   if (launchLoading) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-gray-400">Loading launch details...</p>
@@ -66,7 +77,7 @@ const LaunchDetail = () => {
 
   if (launchError || !launch) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-8 max-w-md text-center">
           <h1 className="text-2xl font-bold mb-4">Launch Not Found</h1>
           <p className="text-gray-400 mb-6">{launchError?.message || 'The requested launch does not exist.'}</p>
@@ -91,23 +102,42 @@ const LaunchDetail = () => {
     });
   };
 
-  const getStatusBadge = (status: number) => {
+  const getStatusBadge = (status: string, statusLabel: string) => {
     switch (status) {
-      case 3: // Successful
+      case 'success':
         return <Badge className="bg-green-600">✅ Success</Badge>;
-      case 4: // Failed
+      case 'failure':
         return <Badge className="bg-red-600">❌ Failed</Badge>;
-      case 2: // Cancelled (Assuming 2 is cancelled based on typical status codes, adjust if needed)
+      case 'cancelled':
         return <Badge className="bg-gray-600">🚫 Cancelled</Badge>;
+      case 'delayed':
+        return <Badge className="bg-amber-600">⏸ Delayed</Badge>;
       default:
-        return <Badge className="bg-blue-600">🕒 Scheduled</Badge>;
+        return <Badge className="bg-blue-600">{statusLabel}</Badge>;
     }
   };
 
+  const launchBaseCenter: [number, number] | null =
+    launch.launch_base &&
+    typeof launch.launch_base.latitude === 'number' &&
+    typeof launch.launch_base.longitude === 'number'
+      ? [launch.launch_base.latitude, launch.launch_base.longitude]
+      : null;
+
+  const companyHref = launch.company?.id ? `/companies/${launch.company.id}` : null;
+  const companyInitials = launch.company?.name
+    ? launch.company.name
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((segment) => segment.charAt(0).toUpperCase())
+        .join('')
+    : 'LD';
+
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-[#f0f0f0]">
+    <div className="min-h-screen bg-background text-[#f0f0f0]">
       {/* Hero Section */}
-      <section className="relative h-[60vh] md:h-[70vh] flex items-end justify-center text-center overflow-hidden">
+      <section className="relative -mt-20 h-screen flex items-end justify-center text-center overflow-hidden">
         <div className="absolute inset-0 z-0">
           <img 
             src={launch.background_image || "https://images.unsplash.com/photo-1614728263952-84ea256ec346?q=80&w=2574&auto=format&fit=crop"}
@@ -117,18 +147,18 @@ const LaunchDetail = () => {
             alt="Rocket Launch Background" 
             className="w-full h-full object-cover"
           />
-          <div className="absolute inset-0 bg-black/40"></div>
+          <div className="absolute inset-0 bg-black/25"></div>
           <div className="absolute inset-x-0 bottom-0 h-1/2" style={{
-            background: 'linear-gradient(0deg, rgba(10, 10, 10, 1) 0%, rgba(10, 10, 10, 0.7) 30%, rgba(10, 10, 10, 0) 100%)'
+            background: 'linear-gradient(0deg, rgba(10, 10, 10, 0.9) 0%, rgba(10, 10, 10, 0.45) 30%, rgba(10, 10, 10, 0) 100%)'
           }}></div>
         </div>
-        <div className="relative z-10 p-4 pb-16 md:pb-24 container mx-auto">
+        <div className="relative z-10 p-4 pb-24 md:pb-32 container mx-auto">
           <div className="mb-8">
-            {getStatusBadge(launch.status)}
+            {getStatusBadge(launch.status, launch.status_label)}
           </div>
 
           {/* Countdown Timer - Only show for scheduled launches */}
-          {launch.status === 1 && (
+          {launch.status === 'scheduled' && (
             <div className="mb-8">
               <h2 className="text-lg md:text-xl font-medium text-gray-300 mb-4">Launch Countdown</h2>
               <div className="flex justify-center gap-4 md:gap-6">
@@ -173,9 +203,9 @@ const LaunchDetail = () => {
           )}
 
           <h1 className="text-4xl md:text-6xl font-extrabold mb-4">{launch.name}</h1>
-          <p className="text-xl md:text-2xl text-gray-300 mb-2">{launch.rocket_info?.name}</p>
-          <p className="text-lg md:text-xl text-gray-400 mb-2">📍 {launch.location_info?.name}</p>
-          {launch.status !== 1 && (
+          <p className="text-xl md:text-2xl text-gray-300 mb-2">{launch.rocket.name}</p>
+          <p className="text-lg md:text-xl text-gray-400 mb-2">📍 {launch.launch_base.name}</p>
+          {launch.status !== 'scheduled' && (
             <p className="text-lg md:text-xl text-gray-400 mb-8">🕒 {formatDate(launch.launch_time)}</p>
           )}
         </div>
@@ -193,29 +223,44 @@ const LaunchDetail = () => {
               <div className="lg:col-span-2 space-y-6">
 
                 {/* Rocket Information */}
-                {launch.rocket_info && (
+                {launch.rocket && (
                   <div className="bg-[#1a1a1a] border border-[#2a2a2a] p-6 rounded-lg">
                     <h3 className="text-xl font-bold mb-3">Rocket Information</h3>
                     <div className="flex flex-col sm:flex-row gap-6">
                       <div className="w-32 h-48 bg-[#0a0a0a] rounded-lg overflow-hidden flex-shrink-0">
-                        <img src={launch.rocket_info.thumb_image} alt={launch.rocket_info.name} className="w-full h-full object-cover" />
+                        {!rocketImageFailed && (launch.rocket.image_url || launch.rocket.thumb_image) ? (
+                          <img
+                            src={launch.rocket.image_url || launch.rocket.thumb_image}
+                            alt={launch.rocket.name}
+                            className="w-full h-full object-cover"
+                            onError={() => setRocketImageFailed(true)}
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.18),_rgba(8,15,28,0.92)_72%)] px-3 text-center">
+                            <span className="text-sm font-semibold uppercase tracking-[0.28em] text-slate-300">
+                              {launch.rocket.name}
+                            </span>
+                          </div>
+                        )}
                       </div>
                       <div className="flex-1">
-                        <h4 className="text-2xl font-bold mb-2">{launch.rocket_info.name}</h4>
-                        <Button asChild className="bg-blue-600 hover:bg-blue-700">
-                          <Link to={`/rockets/${launch.rocket_info.id}`}>View Rocket Details →</Link>
-                        </Button>
+                        <h4 className="text-2xl font-bold mb-2">{launch.rocket.name}</h4>
+                        {launch.rocket.id && (
+                          <Button asChild className="bg-blue-600 hover:bg-blue-700">
+                            <Link to={`/rockets/${launch.rocket.id}`}>View Rocket Details →</Link>
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
                 )}
 
                 {/* Mission Info */}
-                {launch.mission_info && launch.mission_info.length > 0 && (
+                {launch.missions && launch.missions.length > 0 && (
                   <div className="bg-[#1a1a1a] border border-[#2a2a2a] p-6 rounded-lg">
                     <h3 className="text-xl font-bold mb-3">Mission Details</h3>
-                    {launch.mission_info.map((mission) => (
-                      <div key={mission.id} className="mb-4 last:mb-0">
+                    {launch.missions.map((mission) => (
+                      <div key={mission.name} className="mb-4 last:mb-0">
                         <h4 className="font-semibold text-lg mb-2">{mission.name}</h4>
                         {mission.description && <p className="text-gray-400">{mission.description}</p>}
                       </div>
@@ -257,21 +302,37 @@ const LaunchDetail = () => {
                 )}
 
                 {/* Location Map */}
-                {launch.location_info && typeof launch.location_info.lat === 'number' && typeof launch.location_info.lon === 'number' && (
+                {launchBaseCenter && (
                   <div className="bg-[#1a1a1a] border border-[#2a2a2a] p-6 rounded-lg">
                     <h3 className="text-xl font-bold mb-3">Location</h3>
-                    <div className="aspect-video w-full rounded-lg overflow-hidden">
-                      <iframe
-                        width="100%"
-                        height="100%"
-                        frameBorder="0"
-                        scrolling="no"
-                        marginHeight={0}
-                        marginWidth={0}
-                        src={`https://www.openstreetmap.org/export/embed.html?bbox=${launch.location_info.lon-0.5}%2C${launch.location_info.lat-0.5}%2C${launch.location_info.lon+0.5}%2C${launch.location_info.lat+0.5}&amp;layer=mapnik&amp;marker=${launch.location_info.lat}%2C${launch.location_info.lon}`}
-                      ></iframe>
+                    <div className="aspect-video w-full overflow-hidden rounded-lg border border-white/10">
+                      <MapContainer
+                        center={launchBaseCenter}
+                        zoom={7}
+                        scrollWheelZoom={true}
+                        className="h-full w-full"
+                      >
+                        <TileLayer
+                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        />
+                        <CircleMarker
+                          center={launchBaseCenter}
+                          radius={10}
+                          pathOptions={{
+                            color: '#eef4fb',
+                            weight: 2,
+                            fillColor: '#78d7ff',
+                            fillOpacity: 0.95,
+                          }}
+                        >
+                          <Tooltip direction="top" offset={[0, -10]} opacity={1} permanent>
+                            {launch.launch_base.name}
+                          </Tooltip>
+                        </CircleMarker>
+                      </MapContainer>
                     </div>
-                    <p className="mt-2 text-gray-400 text-sm">{launch.location_info.name}</p>
+                    <p className="mt-2 text-gray-400 text-sm">{launch.launch_base.name}</p>
                   </div>
                 )}
               </div>
@@ -279,30 +340,60 @@ const LaunchDetail = () => {
               {/* Right Column */}
               <div className="space-y-6">
                 {/* Agency Logo */}
-                {launch.agency_info && (
-                  <div className="bg-[#1a1a1a] border border-[#2a2a2a] p-6 rounded-lg flex flex-col items-center text-center">
-                    <h3 className="text-xl font-bold mb-4">Launch Agency</h3>
-                    {launch.agency_info.thumb_image ? (
-                      <img src={launch.agency_info.thumb_image} alt={launch.agency_info.name} className="max-w-[200px] max-h-[200px] object-contain mb-4" />
-                    ) : (
-                      <div className="w-32 h-32 bg-gray-800 rounded-full flex items-center justify-center mb-4">
-                        <span className="text-4xl">🚀</span>
+                {launch.company && (
+                  companyHref ? (
+                    <Link to={companyHref} className="group block">
+                      <div className="flex flex-col items-center rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] p-6 text-center transition-all duration-300 hover:-translate-y-1 hover:border-[var(--color-card-hover-border)]">
+                        <h3 className="mb-4 text-xl font-bold">Launch Agency</h3>
+                        {launch.company.image_url && !companyImageFailed ? (
+                          <div className="mb-4 flex h-32 w-32 items-center justify-center overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-4">
+                            <img
+                              src={launch.company.image_url}
+                              alt={launch.company.name}
+                              className="max-h-full max-w-full object-contain"
+                              onError={() => setCompanyImageFailed(true)}
+                            />
+                          </div>
+                        ) : (
+                          <div className="mb-4 flex h-32 w-32 items-center justify-center rounded-3xl border border-white/10 bg-[linear-gradient(180deg,rgba(120,215,255,0.16),rgba(255,255,255,0.03))] text-3xl font-black tracking-[0.08em] text-[var(--color-highlight-strong)] shadow-[0_18px_50px_rgba(0,0,0,0.18)]">
+                            {companyInitials}
+                          </div>
+                        )}
+                        <h4 className="text-lg font-semibold transition-colors group-hover:text-[var(--color-highlight-strong)]">{launch.company.name}</h4>
                       </div>
-                    )}
-                    <h4 className="text-lg font-semibold">{launch.agency_info.name}</h4>
-                  </div>
+                    </Link>
+                  ) : (
+                    <div className="flex flex-col items-center rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] p-6 text-center">
+                      <h3 className="mb-4 text-xl font-bold">Launch Agency</h3>
+                      {launch.company.image_url && !companyImageFailed ? (
+                        <div className="mb-4 flex h-32 w-32 items-center justify-center overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-4">
+                          <img
+                            src={launch.company.image_url}
+                            alt={launch.company.name}
+                            className="max-h-full max-w-full object-contain"
+                            onError={() => setCompanyImageFailed(true)}
+                          />
+                        </div>
+                      ) : (
+                        <div className="mb-4 flex h-32 w-32 items-center justify-center rounded-3xl border border-white/10 bg-[linear-gradient(180deg,rgba(120,215,255,0.16),rgba(255,255,255,0.03))] text-3xl font-black tracking-[0.08em] text-[var(--color-highlight-strong)] shadow-[0_18px_50px_rgba(0,0,0,0.18)]">
+                          {companyInitials}
+                        </div>
+                      )}
+                      <h4 className="text-lg font-semibold">{launch.company.name}</h4>
+                    </div>
+                  )
                 )}
 
                 {/* Timeline */}
                 <div className="bg-[#1a1a1a] border border-[#2a2a2a] p-6 rounded-lg">
                   <h3 className="text-xl font-bold mb-6">Launch Timeline</h3>
                   <div className="relative pl-8">
-                    {launch.timeline_event && launch.timeline_event.map((event, index) => (
+                    {launch.timeline && launch.timeline.map((event, index) => (
                       <div key={index} className="relative pb-8 last:pb-0">
                         <div 
                           className="absolute -left-[30px] top-[5px] w-5 h-5 rounded-full bg-[#2a2a2a] border-4 border-[#007bff]"
                         ></div>
-                        {index !== launch.timeline_event.length - 1 && (
+                        {index !== launch.timeline.length - 1 && (
                           <div 
                             className="absolute -left-[21px] top-[5px] bottom-[-5px] w-0.5 bg-[#2a2a2a]"
                           ></div>
@@ -311,7 +402,7 @@ const LaunchDetail = () => {
                         <p className="text-gray-400">{event.description}</p>
                       </div>
                     ))}
-                    {(!launch.timeline_event || launch.timeline_event.length === 0) && (
+                    {(!launch.timeline || launch.timeline.length === 0) && (
                       <p className="text-gray-400">No timeline information available.</p>
                     )}
                   </div>

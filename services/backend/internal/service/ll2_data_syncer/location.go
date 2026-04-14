@@ -12,14 +12,16 @@ type LocationSyncer struct {
 	*BaseSyncer
 	ll2Service *ll2.LL2Service
 	core       *core.MainService
+	report     func(map[string]interface{})
 	offset     int
 	total      int
 }
 
-func NewLocationSyncer(rl util.RateLimiter, ll2Service *ll2.LL2Service, core *core.MainService) *LocationSyncer {
+func NewLocationSyncer(rl util.RateLimiter, ll2Service *ll2.LL2Service, core *core.MainService, report func(map[string]interface{})) *LocationSyncer {
 	ls := &LocationSyncer{
 		ll2Service: ll2Service,
 		core:       core,
+		report:     report,
 	}
 	ls.BaseSyncer = NewBaseSyncer(rl, ls.sync)
 	return ls
@@ -52,9 +54,16 @@ func (ls *LocationSyncer) sync() {
 	}
 
 	ls.offset += len(resp.Results)
+	ls.notifyProgress()
 
 	if ls.offset >= ls.total {
 		ls.requestStop()
+	}
+}
+
+func (ls *LocationSyncer) notifyProgress() {
+	if ls.report != nil {
+		ls.report(buildCountProgress(ls.offset, ls.total))
 	}
 }
 

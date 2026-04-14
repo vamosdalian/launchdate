@@ -4,6 +4,50 @@ export interface RocketListItem {
   thumb_image: string;
 }
 
+export type PublicLaunchStatus =
+  | 'scheduled'
+  | 'success'
+  | 'failure'
+  | 'cancelled'
+  | 'delayed'
+  | 'in_flight'
+  | 'unknown';
+
+export interface PublicCompactRocket {
+  id: string;
+  name: string;
+  image_url: string;
+  thumb_image: string;
+}
+
+export interface PublicCompactCompany {
+  id: string;
+  name: string;
+  image_url: string;
+}
+
+export interface PublicCompactLaunchBase {
+  id: string;
+  name: string;
+  location: string;
+  country: string;
+  latitude: number;
+  longitude: number;
+}
+
+export interface PublicLaunchSummary {
+  id: string;
+  name: string;
+  launch_time: string;
+  status: PublicLaunchStatus;
+  status_label: string;
+  thumb_image: string;
+  background_image: string;
+  rocket: PublicCompactRocket;
+  company: PublicCompactCompany;
+  launch_base: PublicCompactLaunchBase;
+}
+
 export interface RocketDetail {
   id: string;
   name: string;
@@ -13,8 +57,8 @@ export interface RocketDetail {
   launch_image: string;
   main_image: string;
   image_list: string[];
-  agency_info?: PublicCompactAgency;
-  launches: PublicCompactLaunch[]; 
+  company: PublicCompactCompany;
+  launches: PublicLaunchSummary[];
   launch_cost: number;
   diameter: number;
   length: number;
@@ -133,20 +177,28 @@ export interface News {
 }
 
 export interface LaunchBase {
-  id: number;
+  id: string;
   name: string;
   location: string;
   country: string;
   description: string;
-  imageUrl: string;
+  image_url: string;
   latitude: number;
   longitude: number;
+  launches?: PublicLaunchSummary[];
+  stats?: {
+    launch_count: number;
+    upcoming_launch_count: number;
+    successful_launches: number;
+    failed_launches: number;
+    success_rate: number;
+  };
   created_at?: string;
   updated_at?: string;
 }
 
 export interface Company {
-  id: number;
+  id: string;
   name: string;
   description: string;
   founded: number;
@@ -154,45 +206,40 @@ export interface Company {
   headquarters: string;
   employees: number;
   website: string;
-  imageUrl: string;
+  image_url: string;
+  rockets?: RocketListItem[];
+  launches?: PublicLaunchSummary[];
+  stats?: {
+    rocket_count: number;
+    launch_count: number;
+    successful_launches: number;
+    failed_launches: number;
+    pending_launches: number;
+  };
   created_at?: string;
   updated_at?: string;
 }
 
-// New API Types
-export interface PublicCompactLaunch {
-  id: string;
-  name: string;
-  launch_time: string;
-  status: number;
-  thumb_image: string;
-  rocket_name: string;
-  agency_name: string;
-  location: string;
-}
+export type { PageBackground, PageBackgroundKey } from './page-background';
 
-export interface PublicLaunchList {
+export interface PublicLaunchPage {
   count: number;
-  launches: PublicCompactLaunch[];
+  launches: PublicLaunchSummary[];
 }
 
-export interface PublicCompactRocket {
-  id: string;
-  name: string;
-  thumb_image: string;
+export interface PublicRocketPage {
+  count: number;
+  rockets: RocketListItem[];
 }
 
-export interface PublicCompactAgency {
-  id: string;
-  name: string;
-  thumb_image: string;
+export interface PublicCompanyPage {
+  count: number;
+  companies: Company[];
 }
 
-export interface PublicCompactLocation {
-  id: string;
-  name: string;
-  lat: number;
-  lon: number;
+export interface PublicLaunchBasePage {
+  count: number;
+  launch_bases: LaunchBase[];
 }
 
 export interface TimelineEvent {
@@ -202,21 +249,21 @@ export interface TimelineEvent {
 }
 
 export interface Mission {
-  id: string;
   name: string;
   description: string;
 }
 
-export interface PublicLaunchDetail {
+export interface PublicLaunchView {
   id: string;
   name: string;
   launch_time: string;
-  status: number;
+  status: PublicLaunchStatus;
+  status_label: string;
   background_image: string;
   image_list: string[];
-  rocket_info: PublicCompactRocket;
-  agency_info: PublicCompactAgency;
-  location_info: PublicCompactLocation;
-  mission_info: Mission[];
-  timeline_event: TimelineEvent[];
+  rocket: PublicCompactRocket;
+  company: PublicCompactCompany;
+  launch_base: PublicCompactLaunchBase;
+  missions: Mission[];
+  timeline: TimelineEvent[];
 }

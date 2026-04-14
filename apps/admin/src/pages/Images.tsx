@@ -27,7 +27,7 @@ import { cn } from '@/lib/utils';
 interface ImageCardProps {
   image: Image;
   onDelete: (key: string) => Promise<void>;
-  onGenerateThumbnail: (id: number, width: number, height: number) => Promise<void>;
+  onGenerateThumbnail: (id: string, width: number, height: number) => Promise<void>;
 }
 
 const ImageCard = ({ image, onDelete, onGenerateThumbnail }: ImageCardProps) => {
@@ -193,7 +193,7 @@ export default function Images() {
     }
   };
 
-  const handleGenerateThumbnail = async (id: number, width: number, height: number) => {
+  const handleGenerateThumbnail = async (id: string, width: number, height: number) => {
     try {
       await imageService.generateThumbnail({ id, width, height });
       toast.success('Thumbnail generation started');

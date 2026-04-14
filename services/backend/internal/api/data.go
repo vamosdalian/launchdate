@@ -262,6 +262,48 @@ func (h *Handler) GetStats(c *gin.Context) {
 	h.Json(c, stats)
 }
 
+func (h *Handler) GetPageBackgrounds(c *gin.Context) {
+	pageBackgrounds, err := h.core.GetPageBackgrounds()
+	if err != nil {
+		h.Error(c, "failed to get page backgrounds: "+err.Error())
+		return
+	}
+
+	h.Json(c, pageBackgrounds)
+}
+
+func (h *Handler) UpdatePageBackground(c *gin.Context) {
+	pageKey := c.Param("pageKey")
+	if !models.IsValidPageBackgroundKey(pageKey) {
+		h.Error(c, "invalid page key")
+		return
+	}
+
+	var req models.PageBackgroundUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.Error(c, "invalid request body")
+		return
+	}
+
+	pageBackground, err := h.core.UpsertPageBackground(pageKey, req.BackgroundImage)
+	if err != nil {
+		h.Error(c, "failed to update page background: "+err.Error())
+		return
+	}
+
+	h.Json(c, pageBackground)
+}
+
+func (h *Handler) GetPublicPageBackgrounds(c *gin.Context) {
+	pageBackgrounds, err := h.core.GetPageBackgrounds()
+	if err != nil {
+		h.Error(c, "failed to get page backgrounds: "+err.Error())
+		return
+	}
+
+	h.Json(c, pageBackgrounds)
+}
+
 func (h *Handler) GetPublicLaunchByID(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -280,7 +322,10 @@ func (h *Handler) GetPublicLaunchByID(c *gin.Context) {
 
 func (h *Handler) GetPublicLaunches(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
-	launches, err := h.core.GetPublicLaunches(page)
+	if page < 0 {
+		page = 0
+	}
+	launches, err := h.core.GetPublicLaunches(page, c.Query("search"))
 	if err != nil {
 		h.Error(c, "failed to get launches: "+err.Error())
 		return
@@ -290,7 +335,10 @@ func (h *Handler) GetPublicLaunches(c *gin.Context) {
 
 func (h *Handler) GetPublicRockets(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
-	rockets, err := h.core.GetPublicRockets(page)
+	if page < 0 {
+		page = 0
+	}
+	rockets, err := h.core.GetPublicRockets(page, c.Query("search"))
 	if err != nil {
 		h.Error(c, "failed to get rockets: "+err.Error())
 		return
@@ -312,4 +360,73 @@ func (h *Handler) GetPublicRocketByID(c *gin.Context) {
 	}
 
 	h.Json(c, rocket)
+}
+
+func (h *Handler) GetPublicCompanies(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
+	if page < 0 {
+		page = 0
+	}
+	homepageOnly := false
+	if rawHomepageOnly, exists := c.GetQuery("homepage_only"); exists {
+		parsedHomepageOnly, err := strconv.ParseBool(rawHomepageOnly)
+		if err != nil {
+			h.Error(c, "invalid homepage_only value")
+			return
+		}
+		homepageOnly = parsedHomepageOnly
+	}
+	companies, err := h.core.GetPublicCompanies(page, c.Query("search"), homepageOnly)
+	if err != nil {
+		h.Error(c, "failed to get companies: "+err.Error())
+		return
+	}
+
+	h.Json(c, companies)
+}
+
+func (h *Handler) GetPublicCompanyByID(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		h.Error(c, "invalid company id")
+		return
+	}
+
+	company, err := h.core.GetPublicCompany(id)
+	if err != nil {
+		h.Error(c, "failed to get company: "+err.Error())
+		return
+	}
+
+	h.Json(c, company)
+}
+
+func (h *Handler) GetPublicLaunchBases(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
+	if page < 0 {
+		page = 0
+	}
+	launchBases, err := h.core.GetPublicLaunchBases(page, c.Query("search"))
+	if err != nil {
+		h.Error(c, "failed to get launch bases: "+err.Error())
+		return
+	}
+
+	h.Json(c, launchBases)
+}
+
+func (h *Handler) GetPublicLaunchBaseByID(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		h.Error(c, "invalid launch base id")
+		return
+	}
+
+	launchBase, err := h.core.GetPublicLaunchBase(id)
+	if err != nil {
+		h.Error(c, "failed to get launch base: "+err.Error())
+		return
+	}
+
+	h.Json(c, launchBase)
 }

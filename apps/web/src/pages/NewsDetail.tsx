@@ -16,7 +16,7 @@ const NewsDetail = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-gray-400">Loading article...</p>
@@ -27,7 +27,7 @@ const NewsDetail = () => {
 
   if (error || !article) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-8 max-w-md text-center">
           <h1 className="text-2xl font-bold mb-4">Article Not Found</h1>
           <p className="text-gray-400 mb-6">{error?.message || 'The requested article does not exist.'}</p>
@@ -52,7 +52,7 @@ const NewsDetail = () => {
   const relatedArticles: News[] = [];
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a]">
+    <div className="min-h-screen bg-background">
       {/* Article Hero */}
       <section className="relative h-[50vh] md:h-[60vh] flex items-end overflow-hidden">
         <div className="absolute inset-0 z-0">

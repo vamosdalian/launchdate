@@ -13,7 +13,7 @@ func TestAgencySyncer_Sync(t *testing.T) {
 	clearCollections(t, "ll2_agency", "agency")
 
 	rl := &mockRateLimiter{ch: make(chan struct{})}
-	syncer := NewAgencySyncer(rl, ll2Service, coreService)
+	syncer := NewAgencySyncer(rl, ll2Service, coreService, nil)
 
 	syncer.Start()
 

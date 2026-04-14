@@ -13,7 +13,7 @@ func TestPadSyncer_Sync(t *testing.T) {
 	clearCollections(t, "ll2_pad")
 
 	rl := &mockRateLimiter{ch: make(chan struct{})}
-	syncer := NewPadSyncer(rl, ll2Service)
+	syncer := NewPadSyncer(rl, ll2Service, nil)
 
 	syncer.Start()
 

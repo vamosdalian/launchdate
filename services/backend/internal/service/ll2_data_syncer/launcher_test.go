@@ -13,7 +13,7 @@ func TestLauncherSyncer_Sync(t *testing.T) {
 	clearCollections(t, "ll2_launcher", "rocket")
 
 	rl := &mockRateLimiter{ch: make(chan struct{})}
-	syncer := NewLauncherSyncer(rl, ll2Service, coreService)
+	syncer := NewLauncherSyncer(rl, ll2Service, coreService, nil)
 
 	syncer.Start()
 

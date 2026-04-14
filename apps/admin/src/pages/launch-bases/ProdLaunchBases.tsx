@@ -41,7 +41,7 @@ import { toast } from "sonner";
 
 interface LaunchBaseRow {
   id: string;
-  backendId?: number;
+  backendId?: string;
   name: string;
   location?: string;
   country?: string;
@@ -345,7 +345,7 @@ export default function ProdLaunchBases() {
                       <TableCell>{row.coordinates || "N/A"}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end">
-                          {typeof row.backendId === "number" ? (
+                          {row.backendId ? (
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>

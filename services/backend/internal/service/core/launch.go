@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,23 +17,13 @@ const COLLECTION_LAUNCH = "launch"
 const COLLECTION_LL2_LAUNCH = "ll2_launch"
 
 func (s *MainService) GenerateLaunchFromLL2(ll2ids []string) error {
-	colleciton := s.mc.Collection(COLLECTION_LAUNCH)
-
-	var docs []any
-	for _, ll2id := range ll2ids {
-		docs = append(docs, models.Launch{
-			ID:         s.sn.Generate().Int64(),
-			ExternalID: ll2id,
-		})
-	}
-	_, err := colleciton.InsertMany(context.Background(), docs)
-
-	return err
+	return s.ensureStringExternalIDs(COLLECTION_LAUNCH, ll2ids)
 }
 
 type LaunchQuery struct {
 	Limit         int
 	Offset        int
+	Search        string
 	Name          string
 	Status        string
 	LaunchService string
@@ -58,23 +49,26 @@ func (q LaunchQuery) sortFieldAndOrder() (string, int) {
 }
 
 func buildLaunchFilter(q LaunchQuery) bson.M {
-	filter := bson.M{}
+	filters := make([]bson.M, 0, 6)
+	if searchClause := buildTextSearchClause(q.Search, "name", "launch_service_provider.name", "rocket.configuration.full_name", "mission.name", "pad.location.name", "pad.name"); len(searchClause) > 0 {
+		filters = append(filters, searchClause)
+	}
 	if name := strings.TrimSpace(q.Name); name != "" {
-		filter["name"] = bson.M{"$regex": name, "$options": "i"}
+		filters = append(filters, bson.M{"name": bson.M{"$regex": name, "$options": "i"}})
 	}
 	if status := strings.TrimSpace(q.Status); status != "" {
-		filter["status.name"] = bson.M{"$regex": status, "$options": "i"}
+		filters = append(filters, bson.M{"status.name": bson.M{"$regex": status, "$options": "i"}})
 	}
 	if provider := strings.TrimSpace(q.LaunchService); provider != "" {
-		filter["launch_service_provider.name"] = bson.M{"$regex": provider, "$options": "i"}
+		filters = append(filters, bson.M{"launch_service_provider.name": bson.M{"$regex": provider, "$options": "i"}})
 	}
 	if rocket := strings.TrimSpace(q.Rocket); rocket != "" {
-		filter["rocket.configuration.full_name"] = bson.M{"$regex": rocket, "$options": "i"}
+		filters = append(filters, bson.M{"rocket.configuration.full_name": bson.M{"$regex": rocket, "$options": "i"}})
 	}
 	if mission := strings.TrimSpace(q.Mission); mission != "" {
-		filter["mission.name"] = bson.M{"$regex": mission, "$options": "i"}
+		filters = append(filters, bson.M{"mission.name": bson.M{"$regex": mission, "$options": "i"}})
 	}
-	return filter
+	return combineFilters(filters...)
 }
 
 func (m *MainService) GetLaunches(q LaunchQuery) (models.LaunchList, error) {
@@ -214,7 +208,7 @@ func (m *MainService) UpdateLaunch(l *models.Launch) error {
 	return nil
 }
 
-func (m *MainService) GetPublicLaunch(id int64) (models.PublicLaunchDetail, error) {
+func (m *MainService) GetPublicLaunch(id int64) (models.PublicLaunchView, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -222,7 +216,7 @@ func (m *MainService) GetPublicLaunch(id int64) (models.PublicLaunchDetail, erro
 	var launch models.Launch
 	err := m.mc.Collection(COLLECTION_LAUNCH).FindOne(ctx, bson.M{"id": id}).Decode(&launch)
 	if err != nil {
-		return models.PublicLaunchDetail{}, err
+		return models.PublicLaunchView{}, err
 	}
 
 	// 2. Get LL2Launch
@@ -230,67 +224,61 @@ func (m *MainService) GetPublicLaunch(id int64) (models.PublicLaunchDetail, erro
 	if launch.ExternalID != "" {
 		err = m.mc.Collection(COLLECTION_LL2_LAUNCH).FindOne(ctx, bson.M{"id": launch.ExternalID}).Decode(&ll2Launch)
 		if err != nil && err != mongo.ErrNoDocuments {
-			return models.PublicLaunchDetail{}, err
+			return models.PublicLaunchView{}, err
 		}
 	}
 
-	// 3. Get Rocket
-	var rocket models.Rocket
-	if ll2Launch.Rocket.Configuration.ID != 0 {
-		// Assuming external_id in rocket collection matches LL2 ID
-		err = m.mc.Collection(COLLECTION_AGENCY).FindOne(ctx, bson.M{"external_id": ll2Launch.Rocket.Configuration.ID}).Decode(&rocket)
-		if err != nil {
-			if err == mongo.ErrNoDocuments {
-				logrus.Errorf("couldn't find rocket for launch %d with ll2 rocket id %d", id, ll2Launch.Rocket.Configuration.ID)
-			} else {
-				logrus.Errorf("failed to get rocket for launch %d: %v", id, err)
-			}
-		}
+	rocketMap, err := m.loadRocketMapByExternalIDs(ctx, []int64{int64(ll2Launch.Rocket.Configuration.ID)})
+	if err != nil {
+		return models.PublicLaunchView{}, err
+	}
+	launcherMap, err := m.loadLauncherConfigMapByExternalIDs(ctx, []int64{int64(ll2Launch.Rocket.Configuration.ID)})
+	if err != nil {
+		return models.PublicLaunchView{}, err
+	}
+	agencyMap, err := m.loadAgencyMapByExternalIDs(ctx, []int64{int64(ll2Launch.LaunchServiceProvider.ID)})
+	if err != nil {
+		return models.PublicLaunchView{}, err
+	}
+	agencyDocMap, err := m.loadLL2AgencyMapByExternalIDs(ctx, []int64{int64(ll2Launch.LaunchServiceProvider.ID)})
+	if err != nil {
+		return models.PublicLaunchView{}, err
+	}
+	baseMap, err := m.loadLaunchBaseMapByExternalIDs(ctx, []int64{int64(ll2Launch.Pad.Location.ID)})
+	if err != nil {
+		return models.PublicLaunchView{}, err
 	}
 
-	// 4. Get Agency
-	var agency models.Agency
-	if ll2Launch.LaunchServiceProvider.ID != 0 {
-		err = m.mc.Collection(COLLECTION_AGENCY).FindOne(ctx, bson.M{"external_id": ll2Launch.LaunchServiceProvider.ID}).Decode(&agency)
-		if err != nil {
-			if err == mongo.ErrNoDocuments {
-				logrus.Errorf("couldn't find agency for launch %d with ll2 agency id %d", id, ll2Launch.LaunchServiceProvider.ID)
-			} else {
-				logrus.Errorf("failed to get agency for launch %d: %v", id, err)
-			}
-		}
+	launchSummary, ok := m.buildPublicLaunchSummary(
+		launch,
+		ll2Launch,
+		rocketMap,
+		launcherMap,
+		agencyMap,
+		agencyDocMap,
+		baseMap,
+	)
+	if !ok {
+		return models.PublicLaunchView{}, mongo.ErrNoDocuments
 	}
 
-	// 5. Construct Response
-	detail := models.PublicLaunchDetail{
-		ID:              launch.ID,
-		Name:            ll2Launch.Name,
-		LaunchTime:      ll2Launch.Net,
-		Status:          ll2Launch.Status.ID,
-		BackgroundImage: launch.BackgroundImage,
+	detail := models.PublicLaunchView{
+		ID:              launchSummary.ID,
+		Name:            launchSummary.Name,
+		LaunchTime:      launchSummary.LaunchTime,
+		Status:          launchSummary.Status,
+		StatusLabel:     launchSummary.StatusLabel,
+		BackgroundImage: launchSummary.BackgroundImage,
 		ImageList:       launch.ImageList,
-		RocketInfo: models.PublicCompactRocket{
-			ID:         rocket.ID,
-			Name:       ll2Launch.Rocket.Configuration.Name,
-			ThumbImage: rocket.ThumbImage,
-		},
-		AgencyInfo: models.PublicCompactAgency{
-			ID:         agency.ID,
-			Name:       ll2Launch.LaunchServiceProvider.Name,
-			ThumbImage: agency.ThumbImage,
-		},
-		LocationInfo: models.PublicCompactLocation{
-			ID:   int64(ll2Launch.Pad.Location.ID),
-			Name: ll2Launch.Pad.Location.Name,
-			Lat:  ll2Launch.Pad.Location.Latitude,
-			Lon:  ll2Launch.Pad.Location.Longitude,
-		},
-		MissionInfo:   []models.Mission{},
-		TimelineEvent: []models.TimelineEvent{},
+		Rocket:          launchSummary.Rocket,
+		Company:         launchSummary.Company,
+		LaunchBase:      launchSummary.LaunchBase,
+		Missions:        []models.PublicMissionSummary{},
+		Timeline:        []models.PublicTimelineEntry{},
 	}
 
 	for _, event := range ll2Launch.Timeline {
-		detail.TimelineEvent = append(detail.TimelineEvent, models.TimelineEvent{
+		detail.Timeline = append(detail.Timeline, models.PublicTimelineEntry{
 			RelativeTime: event.RelativeTime,
 			Abbrev:       event.Type.Abbrev,
 			Description:  event.Type.Description,
@@ -298,8 +286,7 @@ func (m *MainService) GetPublicLaunch(id int64) (models.PublicLaunchDetail, erro
 	}
 
 	if ll2Launch.Mission.ID != 0 {
-		detail.MissionInfo = append(detail.MissionInfo, models.Mission{
-			ID:          int64(ll2Launch.Mission.ID),
+		detail.Missions = append(detail.Missions, models.PublicMissionSummary{
 			Name:        ll2Launch.Mission.Name,
 			Description: ll2Launch.Mission.Description,
 		})
@@ -308,59 +295,70 @@ func (m *MainService) GetPublicLaunch(id int64) (models.PublicLaunchDetail, erro
 	return detail, nil
 }
 
-func (m *MainService) GetPublicLaunches(page int) (models.PublicLaunchList, error) {
+func (m *MainService) GetPublicLaunches(page int, search string) (models.PublicLaunchPage, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	ll2Collection := m.mc.Collection(COLLECTION_LL2_LAUNCH)
+	baseFilter := buildLaunchFilter(LaunchQuery{Search: search})
+	const pageSize = int64(20)
+	var err error
 
 	var futureLaunches []models.LL2LaunchDetailed
+	var futureCount int64
 
 	// 1. Future launches (next 14 days) - Only for page 0
 	if page == 0 {
 		futureLimit := time.Now().UTC().AddDate(0, 0, 14).Format(time.RFC3339)
-		futureFilter := bson.M{
+		futureFilter := combineFilters(baseFilter, bson.M{
 			"net": bson.M{
 				"$gte": now,
 				"$lte": futureLimit,
 			},
-		}
-		futureCursor, err := ll2Collection.Find(ctx, futureFilter, options.Find().SetSort(bson.D{{Key: "net", Value: 1}}))
+		})
+		futureCount, err = ll2Collection.CountDocuments(ctx, futureFilter)
 		if err != nil {
-			return models.PublicLaunchList{}, err
+			return models.PublicLaunchPage{}, err
+		}
+		futureCursor, err := ll2Collection.Find(ctx, futureFilter, options.Find().SetSort(bson.D{{Key: "net", Value: -1}}))
+		if err != nil {
+			return models.PublicLaunchPage{}, err
 		}
 		defer futureCursor.Close(ctx)
 
 		if err = futureCursor.All(ctx, &futureLaunches); err != nil {
-			return models.PublicLaunchList{}, err
+			return models.PublicLaunchPage{}, err
 		}
 	}
 
 	// 2. Past launches (latest 20)
-	pastFilter := bson.M{
+	pastFilter := combineFilters(baseFilter, bson.M{
 		"net": bson.M{
 			"$lt": now,
 		},
-	}
-	limit := int64(20)
-	skip := int64(page) * limit
-
-	pastCursor, err := ll2Collection.Find(ctx, pastFilter, options.Find().SetSort(bson.D{{Key: "net", Value: -1}}).SetLimit(limit).SetSkip(skip))
+	})
+	pastCount, err := ll2Collection.CountDocuments(ctx, pastFilter)
 	if err != nil {
-		return models.PublicLaunchList{}, err
+		return models.PublicLaunchPage{}, err
+	}
+	skip := int64(page) * pageSize
+
+	pastCursor, err := ll2Collection.Find(ctx, pastFilter, options.Find().SetSort(bson.D{{Key: "net", Value: -1}}).SetLimit(pageSize).SetSkip(skip))
+	if err != nil {
+		return models.PublicLaunchPage{}, err
 	}
 	defer pastCursor.Close(ctx)
 
 	var pastLaunches []models.LL2LaunchDetailed
 	if err = pastCursor.All(ctx, &pastLaunches); err != nil {
-		return models.PublicLaunchList{}, err
+		return models.PublicLaunchPage{}, err
 	}
 
 	// Combine results
 	allLL2Launches := append(futureLaunches, pastLaunches...)
 	if len(allLL2Launches) == 0 {
-		return models.PublicLaunchList{Count: 0, Launches: []models.PublicCompactLaunch{}}, nil
+		return models.PublicLaunchPage{Count: 0, Launches: []models.PublicLaunchSummary{}}, nil
 	}
 
 	// 3. Get internal launch data
@@ -371,45 +369,87 @@ func (m *MainService) GetPublicLaunches(page int) (models.PublicLaunchList, erro
 		}
 	}
 
-	launchMap := make(map[string]models.Launch)
-	if len(externalIDs) > 0 {
-		launchCursor, err := m.mc.Collection(COLLECTION_LAUNCH).Find(ctx, bson.M{"external_id": bson.M{"$in": externalIDs}})
-		if err != nil {
-			return models.PublicLaunchList{}, err
-		}
-		defer launchCursor.Close(ctx)
+	launchMap, err := m.loadLaunchMapByExternalIDs(ctx, externalIDs)
+	if err != nil {
+		return models.PublicLaunchPage{}, err
+	}
 
-		for launchCursor.Next(ctx) {
-			var l models.Launch
-			if err := launchCursor.Decode(&l); err != nil {
-				return models.PublicLaunchList{}, err
-			}
-			launchMap[l.ExternalID] = l
+	rocketExternalIDs := make([]int64, 0, len(allLL2Launches))
+	agencyExternalIDs := make([]int64, 0, len(allLL2Launches))
+	baseExternalIDs := make([]int64, 0, len(allLL2Launches))
+	for _, ll2 := range allLL2Launches {
+		if ll2.Rocket.Configuration.ID != 0 {
+			rocketExternalIDs = append(rocketExternalIDs, int64(ll2.Rocket.Configuration.ID))
+		}
+		if ll2.LaunchServiceProvider.ID != 0 {
+			agencyExternalIDs = append(agencyExternalIDs, int64(ll2.LaunchServiceProvider.ID))
+		}
+		if ll2.Pad.Location.ID != 0 {
+			baseExternalIDs = append(baseExternalIDs, int64(ll2.Pad.Location.ID))
 		}
 	}
 
+	rocketMap, err := m.loadRocketMapByExternalIDs(ctx, rocketExternalIDs)
+	if err != nil {
+		return models.PublicLaunchPage{}, err
+	}
+	launcherMap, err := m.loadLauncherConfigMapByExternalIDs(ctx, rocketExternalIDs)
+	if err != nil {
+		return models.PublicLaunchPage{}, err
+	}
+	agencyMap, err := m.loadAgencyMapByExternalIDs(ctx, agencyExternalIDs)
+	if err != nil {
+		return models.PublicLaunchPage{}, err
+	}
+	agencyDocMap, err := m.loadLL2AgencyMapByExternalIDs(ctx, agencyExternalIDs)
+	if err != nil {
+		return models.PublicLaunchPage{}, err
+	}
+	baseMap, err := m.loadLaunchBaseMapByExternalIDs(ctx, baseExternalIDs)
+	if err != nil {
+		return models.PublicLaunchPage{}, err
+	}
+
 	// 4. Construct response
-	publicLaunches := make([]models.PublicCompactLaunch, 0, len(allLL2Launches))
+	publicLaunches := make([]models.PublicLaunchSummary, 0, len(allLL2Launches))
 	for _, ll2 := range allLL2Launches {
 		internalLaunch, ok := launchMap[ll2.ID]
 		if !ok {
 			logrus.Errorf("couldn't find internal launch for ll2 launch id %s", ll2.ID)
+			continue
 		}
 
-		publicLaunches = append(publicLaunches, models.PublicCompactLaunch{
-			ID:         internalLaunch.ID,
-			Name:       ll2.Name,
-			LaunchTime: ll2.Net,
-			Status:     ll2.Status.ID,
-			ThumbImage: internalLaunch.ThumbImage,
-			RocketName: ll2.Rocket.Configuration.Name,
-			AgencyName: ll2.LaunchServiceProvider.Name,
-			Location:   ll2.Pad.Location.Name,
-		})
+		launchSummary, include := m.buildPublicLaunchSummary(internalLaunch, ll2, rocketMap, launcherMap, agencyMap, agencyDocMap, baseMap)
+		if !include {
+			continue
+		}
+		publicLaunches = append(publicLaunches, launchSummary)
 	}
 
-	return models.PublicLaunchList{
-		Count:    len(publicLaunches),
+	nowTime := time.Now().UTC()
+	sort.SliceStable(publicLaunches, func(leftIndex, rightIndex int) bool {
+		leftLaunchTime, leftErr := time.Parse(time.RFC3339, publicLaunches[leftIndex].LaunchTime)
+		rightLaunchTime, rightErr := time.Parse(time.RFC3339, publicLaunches[rightIndex].LaunchTime)
+		if leftErr != nil || rightErr != nil {
+			return publicLaunches[leftIndex].LaunchTime < publicLaunches[rightIndex].LaunchTime
+		}
+
+		leftIsUpcoming := !leftLaunchTime.Before(nowTime)
+		rightIsUpcoming := !rightLaunchTime.Before(nowTime)
+
+		if leftIsUpcoming != rightIsUpcoming {
+			return leftIsUpcoming
+		}
+
+		if leftIsUpcoming {
+			return leftLaunchTime.After(rightLaunchTime)
+		}
+
+		return leftLaunchTime.After(rightLaunchTime)
+	})
+
+	return models.PublicLaunchPage{
+		Count:    int(futureCount + pastCount),
 		Launches: publicLaunches,
 	}, nil
 }

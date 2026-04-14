@@ -1,16 +1,21 @@
 import { useParams, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import { useApi } from '../hooks/useApi';
 import { fetchCompany } from '../services/companiesService';
-import { fetchRockets } from '../services/rocketsService';
-import { fetchRocketLaunches } from '../services/launchesService';
-import type { Launch } from '../types';
 
-// Helper to get the best date field from launch data
-const getLaunchDate = (launch: Launch): string => {
-  return launch.t0 || launch.window_open || launch.win_open || launch.date || launch.created_at || '';
+const getStatusBadge = (status: string, statusLabel: string) => {
+  switch (status) {
+    case 'success':
+      return <Badge className="bg-green-600">Success</Badge>;
+    case 'failure':
+      return <Badge className="bg-red-600">Failed</Badge>;
+    case 'cancelled':
+      return <Badge className="bg-gray-600">Cancelled</Badge>;
+    default:
+      return <Badge>{statusLabel}</Badge>;
+  }
 };
 
 const CompanyDetail = () => {
@@ -18,30 +23,13 @@ const CompanyDetail = () => {
   
   const fetchCompanyCallback = useCallback(() => fetchCompany(id!), [id]);
   const { data: company, loading: companyLoading, error: companyError } = useApi(fetchCompanyCallback);
-  
-  const fetchRocketsCallback = useCallback(() => fetchRockets(), []);
-  const { data: rockets } = useApi(fetchRocketsCallback);
-  
-  const fetchLaunchesCallback = useCallback(() => fetchRocketLaunches(), []);
-  const { data: launchesData } = useApi(fetchLaunchesCallback);
-  const launches = launchesData?.launches;
-
-  // Get company's rockets and launches
-  const companyRockets = useMemo(() => {
-    if (!rockets || !company) return [];
-    return rockets.filter(r => r.company === company.name);
-  }, [rockets, company]);
-  
-  const companyLaunches = useMemo(() => {
-    if (!launches || !companyRockets.length) return [];
-    return launches.filter(l => 
-      companyRockets.some(r => r.name === l.rocket_name)
-    ).slice(0, 6);
-  }, [launches, companyRockets]);
+  const companyLaunches = company?.launches ?? [];
+  const companyRockets = company?.rockets ?? [];
+  const rocketCount = company?.stats?.rocket_count ?? companyRockets.length;
 
   if (companyLoading) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-gray-400">Loading company details...</p>
@@ -52,7 +40,7 @@ const CompanyDetail = () => {
 
   if (companyError || !company) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-8 max-w-md text-center">
           <h1 className="text-2xl font-bold mb-4">Company Not Found</h1>
           <p className="text-gray-400 mb-6">{companyError?.message || 'The requested company does not exist.'}</p>
@@ -65,20 +53,16 @@ const CompanyDetail = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a]">
+    <div className="min-h-screen bg-background">
       {/* Hero Section */}
       <section className="relative py-16 md:py-24 bg-[#111]">
         <div className="container mx-auto px-4">
-          <Button asChild variant="ghost" className="mb-8 text-gray-300 hover:text-white">
-            <Link to="/companies">← Back to Companies</Link>
-          </Button>
-          
           <div className="grid md:grid-cols-2 gap-12 items-center">
             {/* Company Logo/Image */}
             <div className="flex justify-center">
               <div className="w-full max-w-md aspect-video bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg overflow-hidden">
                 <img 
-                  src={company.imageUrl} 
+                  src={company.image_url} 
                   alt={company.name}
                   className="w-full h-full object-cover"
                 />
@@ -88,6 +72,9 @@ const CompanyDetail = () => {
             {/* Company Info */}
             <div className="space-y-6">
               <div>
+                <Link to="/companies" className="text-sm text-gray-500 hover:text-gray-300 mb-2 inline-block transition-colors">
+                  ← Back to Companies
+                </Link>
                 <h1 className="text-4xl md:text-6xl font-extrabold mb-4">{company.name}</h1>
                 <p className="text-xl text-gray-400 mb-4">
                   Founded {company.founded} by {company.founder}
@@ -114,17 +101,19 @@ const CompanyDetail = () => {
                 </div>
                 <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4">
                   <p className="text-sm text-gray-400 mb-1">Active Rockets</p>
-                  <p className="text-xl font-bold">{companyRockets.filter(r => r.active).length}</p>
+                  <p className="text-xl font-bold">{rocketCount}</p>
                 </div>
               </div>
 
-              <div className="flex gap-4 pt-4">
-                <Button asChild className="bg-blue-600 hover:bg-blue-700">
-                  <a href={company.website} target="_blank" rel="noopener noreferrer">
-                    Visit Website →
-                  </a>
-                </Button>
-              </div>
+              {company.website && (
+                <div className="flex gap-4 pt-4">
+                  <Button asChild className="bg-blue-600 hover:bg-blue-700">
+                    <a href={company.website} target="_blank" rel="noopener noreferrer">
+                      Visit Website →
+                    </a>
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -141,7 +130,7 @@ const CompanyDetail = () => {
                   <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg overflow-hidden hover:border-[#4a4a4a] hover:-translate-y-1 transition-all duration-300 cursor-pointer h-full">
                     <div className="aspect-[2/3] bg-[#0a0a0a]">
                       <img
-                        src={rocket.imageUrl}
+                        src={rocket.thumb_image}
                         alt={rocket.name}
                         className="w-full h-full object-cover"
                       />
@@ -149,9 +138,8 @@ const CompanyDetail = () => {
                     <div className="p-6">
                       <h3 className="text-lg font-bold mb-2">{rocket.name}</h3>
                       <div className="flex gap-2 text-xs mb-2">
-                        <Badge variant="secondary" className="bg-[#2a2a2a]">Height: {rocket.height}m</Badge>
+                        <Badge variant="secondary" className="bg-[#2a2a2a]">Rocket</Badge>
                       </div>
-                      {rocket.active && <Badge className="bg-green-600">Active</Badge>}
                     </div>
                   </div>
                 </Link>
@@ -184,32 +172,19 @@ const CompanyDetail = () => {
                   });
                 };
 
-                const getStatusBadge = (status: string) => {
-                  switch (status) {
-                    case 'scheduled':
-                      return <Badge>Scheduled</Badge>;
-                    case 'successful':
-                      return <Badge className="bg-green-600">✅ Success</Badge>;
-                    case 'failed':
-                      return <Badge className="bg-red-600">❌ Failed</Badge>;
-                    default:
-                      return <Badge variant="outline">{status}</Badge>;
-                  }
-                };
-
                 return (
                   <Link key={launch.id} to={`/launches/${launch.id}`}>
                     <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6 hover:border-[#4a4a4a] hover:-translate-y-1 transition-all duration-300 cursor-pointer h-full">
                       <div className="flex justify-between items-start mb-4">
                         <h3 className="text-xl font-bold">{launch.name}</h3>
-                        {getStatusBadge(launch.status)}
+                        {getStatusBadge(launch.status, launch.status_label)}
                       </div>
                       <div className="space-y-2 text-sm text-gray-400 mb-4">
-                        <p>🚀 {launch.vehicle?.name || launch.rocket}</p>
-                        <p>📍 {launch.pad?.name || launch.launchBase}</p>
-                        <p>📅 {launch.date_str || formatDate(getLaunchDate(launch))} UTC</p>
+                        <p>🚀 {launch.rocket.name}</p>
+                        <p>📍 {launch.launch_base.name}</p>
+                        <p>📅 {formatDate(launch.launch_time)} UTC</p>
                       </div>
-                      <p className="text-gray-300 line-clamp-2">{launch.quicktext || launch.launch_description || launch.mission_description || launch.description}</p>
+                      <p className="text-gray-300 line-clamp-2">Launch operated by {launch.company.name}.</p>
                     </div>
                   </Link>
                 );

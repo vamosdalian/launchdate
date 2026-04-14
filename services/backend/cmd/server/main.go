@@ -44,8 +44,14 @@ func main() {
 
 	hc := util.NewHTTPClient()
 	coreservice := core.NewMainService(db)
+	if err := coreservice.EnsurePageBackgroundIndexes(); err != nil {
+		logrus.Fatalf("failed to ensure page background indexes: %v", err)
+	}
 	ll2server := ll2.NewLL2Service(cfg, db, hc)
 	ll2syncer := ll2datasyncer.NewLL2DataSyncer(cfg, ll2server, coreservice)
+	if err := ll2syncer.RestoreTasks(); err != nil {
+		logrus.Errorf("failed to restore sync tasks: %v", err)
+	}
 	s3Client, err := util.CreateS3Client(cfg.ImageConf.AccessKey, cfg.ImageConf.SecretKey,
 		cfg.ImageConf.Region, cfg.ImageConf.Endpoint)
 	if err != nil {

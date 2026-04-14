@@ -1,15 +1,23 @@
 import { useParams, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import { useApi } from '../hooks/useApi';
 import { fetchLaunchBase } from '../services/launchBasesService';
-import { fetchRocketLaunches } from '../services/launchesService';
-import type { Launch } from '../types';
 
-// Helper to get the best date field from launch data
-const getLaunchDate = (launch: Launch): string => {
-  return launch.t0 || launch.window_open || launch.win_open || launch.date || launch.created_at || '';
+const isScheduledLaunch = (status: string) => status === 'scheduled';
+
+const getStatusBadge = (status: string, statusLabel: string) => {
+  switch (status) {
+    case 'success':
+      return <Badge className="bg-green-600">Success</Badge>;
+    case 'failure':
+      return <Badge className="bg-red-600">Failed</Badge>;
+    case 'cancelled':
+      return <Badge className="bg-gray-600">Cancelled</Badge>;
+    default:
+      return <Badge>{statusLabel}</Badge>;
+  }
 };
 
 const LaunchBaseDetail = () => {
@@ -17,20 +25,11 @@ const LaunchBaseDetail = () => {
   
   const fetchLaunchBaseCallback = useCallback(() => fetchLaunchBase(id!), [id]);
   const { data: base, loading: baseLoading, error: baseError } = useApi(fetchLaunchBaseCallback);
-  
-  const fetchLaunchesCallback = useCallback(() => fetchRocketLaunches(), []);
-  const { data: launchesData } = useApi(fetchLaunchesCallback);
-  const launches = launchesData?.launches;
-
-  // Get launches from this base
-  const baseLaunches = useMemo(() => {
-    if (!launches || !base) return [];
-    return launches.filter(l => l.location.includes(base.name)).slice(0, 6);
-  }, [launches, base]);
+  const baseLaunches = base?.launches ?? [];
 
   if (baseLoading) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-gray-400">Loading launch base details...</p>
@@ -41,7 +40,7 @@ const LaunchBaseDetail = () => {
 
   if (baseError || !base) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-8 max-w-md text-center">
           <h1 className="text-2xl font-bold mb-4">Launch Site Not Found</h1>
           <p className="text-gray-400 mb-6">{baseError?.message || 'The requested launch site does not exist.'}</p>
@@ -54,21 +53,21 @@ const LaunchBaseDetail = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a]">
+    <div className="min-h-screen bg-background">
       {/* Hero Section with Image */}
-      <section className="relative h-[50vh] md:h-[60vh] flex items-end overflow-hidden">
+      <section className="relative -mt-20 h-screen flex items-end justify-center text-center overflow-hidden">
         <div className="absolute inset-0 z-0">
           <img 
-            src={base.imageUrl} 
+            src={base.image_url} 
             alt={base.name}
             className="w-full h-full object-cover"
           />
-          <div className="absolute inset-0 bg-black/60"></div>
+          <div className="absolute inset-0 bg-black/25"></div>
           <div className="absolute inset-x-0 bottom-0 h-1/2" style={{
-            background: 'linear-gradient(0deg, rgba(10, 10, 10, 1) 0%, rgba(10, 10, 10, 0.7) 30%, rgba(10, 10, 10, 0) 100%)'
+            background: 'linear-gradient(0deg, rgba(10, 10, 10, 0.9) 0%, rgba(10, 10, 10, 0.45) 30%, rgba(10, 10, 10, 0) 100%)'
           }}></div>
         </div>
-        <div className="relative z-10 container mx-auto px-4 pb-12">
+        <div className="relative z-10 container mx-auto px-4 pb-24 md:pb-32">
           <Badge className="mb-4 bg-blue-600">📍 Launch Site</Badge>
           <h1 className="text-3xl md:text-5xl font-extrabold mb-4">{base.name}</h1>
           <p className="text-xl md:text-2xl text-gray-300 mb-2">{base.location}</p>
@@ -143,20 +142,18 @@ const LaunchBaseDetail = () => {
                   <div className="space-y-4">
                     <div className="border-b border-[#2a2a2a] pb-4">
                       <p className="text-sm text-gray-400 mb-1">Total Launches</p>
-                      <p className="text-3xl font-bold text-blue-500">{baseLaunches.length}</p>
+                      <p className="text-3xl font-bold text-blue-500">{base.stats?.launch_count ?? baseLaunches.length}</p>
                     </div>
                     <div className="border-b border-[#2a2a2a] pb-4">
                       <p className="text-sm text-gray-400 mb-1">Success Rate</p>
                       <p className="text-3xl font-bold text-green-500">
-                        {baseLaunches.length > 0 
-                          ? Math.round((baseLaunches.filter(l => l.status === 'successful').length / baseLaunches.length) * 100)
-                          : 0}%
+                        {base.stats?.success_rate ?? 0}%
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-400 mb-1">Upcoming Launches</p>
                       <p className="text-3xl font-bold text-blue-500">
-                        {baseLaunches.filter(l => l.status === 'scheduled').length}
+                        {base.stats?.upcoming_launch_count ?? baseLaunches.filter((launch) => isScheduledLaunch(launch.status)).length}
                       </p>
                     </div>
                   </div>
@@ -203,31 +200,18 @@ const LaunchBaseDetail = () => {
                   });
                 };
 
-                const getStatusBadge = (status: string) => {
-                  switch (status) {
-                    case 'scheduled':
-                      return <Badge>Scheduled</Badge>;
-                    case 'successful':
-                      return <Badge className="bg-green-600">✅ Success</Badge>;
-                    case 'failed':
-                      return <Badge className="bg-red-600">❌ Failed</Badge>;
-                    default:
-                      return <Badge variant="outline">{status}</Badge>;
-                  }
-                };
-
                 return (
                   <Link key={launch.id} to={`/launches/${launch.id}`}>
                     <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6 hover:border-[#4a4a4a] hover:-translate-y-1 transition-all duration-300 cursor-pointer h-full">
                       <div className="flex justify-between items-start mb-4">
                         <h3 className="text-xl font-bold">{launch.name}</h3>
-                        {getStatusBadge(launch.status)}
+                        {getStatusBadge(launch.status, launch.status_label)}
                       </div>
                       <div className="space-y-2 text-sm text-gray-400 mb-4">
-                        <p>🚀 {launch.vehicle?.name || launch.rocket}</p>
-                        <p>📅 {launch.date_str || formatDate(getLaunchDate(launch))} UTC</p>
+                        <p>🚀 {launch.rocket.name}</p>
+                        <p>📅 {formatDate(launch.launch_time)} UTC</p>
                       </div>
-                      <p className="text-gray-300 line-clamp-2">{launch.quicktext || launch.launch_description || launch.mission_description || launch.description}</p>
+                      <p className="text-gray-300 line-clamp-2">Mission operated by {launch.company.name} from {launch.launch_base.name}.</p>
                     </div>
                   </Link>
                 );

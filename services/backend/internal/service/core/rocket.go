@@ -22,6 +22,7 @@ type rocketAggregateDoc struct {
 type RocketQuery struct {
 	Limit     int
 	Offset    int
+	Search    string
 	FullName  string
 	Name      string
 	Variant   string
@@ -31,6 +32,11 @@ type RocketQuery struct {
 
 func (q RocketQuery) sortFieldAndOrder() (string, int) {
 	switch strings.ToLower(strings.TrimSpace(q.SortBy)) {
+	case "total_launch_count":
+		if q.SortOrder < 0 {
+			return "total_launch_count", -1
+		}
+		return "total_launch_count", 1
 	case "full_name", "fullname":
 		if q.SortOrder < 0 {
 			return "full_name", -1
@@ -45,26 +51,27 @@ func (q RocketQuery) sortFieldAndOrder() (string, int) {
 }
 
 func buildRocketFilter(q RocketQuery) bson.M {
-	filter := bson.M{
-		"id": bson.M{"$ne": nil},
+	filters := []bson.M{{"id": bson.M{"$ne": nil}}}
+	if searchClause := buildTextSearchClause(q.Search, "full_name", "name", "variant"); len(searchClause) > 0 {
+		filters = append(filters, searchClause)
 	}
 	if fullName := strings.TrimSpace(q.FullName); fullName != "" {
-		filter["full_name"] = bson.M{"$regex": fullName, "$options": "i"}
+		filters = append(filters, bson.M{"full_name": bson.M{"$regex": fullName, "$options": "i"}})
 	}
 	if name := strings.TrimSpace(q.Name); name != "" {
-		filter["name"] = bson.M{"$regex": name, "$options": "i"}
+		filters = append(filters, bson.M{"name": bson.M{"$regex": name, "$options": "i"}})
 	}
 	if variant := strings.TrimSpace(q.Variant); variant != "" {
-		filter["variant"] = bson.M{"$regex": variant, "$options": "i"}
+		filters = append(filters, bson.M{"variant": bson.M{"$regex": variant, "$options": "i"}})
 	}
-	return filter
+	return combineFilters(filters...)
 }
 
 func rocketAggregationPipeline(filter bson.M) mongo.Pipeline {
 	return mongo.Pipeline{
 		bson.D{{Key: "$match", Value: filter}},
 		bson.D{{Key: "$lookup", Value: bson.M{
-			"from":         COLLECTION_AGENCY,
+			"from":         COLLECTION_ROCKET,
 			"localField":   "id",
 			"foreignField": "external_id",
 			"as":           "rocket_doc",
@@ -73,19 +80,44 @@ func rocketAggregationPipeline(filter bson.M) mongo.Pipeline {
 	}
 }
 
-func (s *MainService) GenerateRocketsFromLL2(launchers []int64) error {
-	colleciton := s.mc.Collection(COLLECTION_ROCKET)
-
-	var docs []any
-	for _, ll2id := range launchers {
-		docs = append(docs, models.Rocket{
-			ID:         s.sn.Generate().Int64(),
-			ExternalID: ll2id,
-		})
+func (m *MainService) findRocketByExternalID(ctx context.Context, externalID int64) (models.Rocket, error) {
+	var rocket models.Rocket
+	err := m.mc.Collection(COLLECTION_ROCKET).FindOne(ctx, bson.M{"external_id": externalID}).Decode(&rocket)
+	if err == nil {
+		return rocket, nil
 	}
-	_, err := colleciton.InsertMany(context.Background(), docs)
+	if err != mongo.ErrNoDocuments {
+		return models.Rocket{}, err
+	}
 
-	return err
+	return models.Rocket{}, mongo.ErrNoDocuments
+}
+
+func (m *MainService) findRocketByPublicID(ctx context.Context, id int64) (models.Rocket, error) {
+	lookups := []struct {
+		collectionName string
+		filter         bson.M
+	}{
+		{collectionName: COLLECTION_ROCKET, filter: bson.M{"external_id": id}},
+		{collectionName: COLLECTION_ROCKET, filter: bson.M{"id": id}},
+	}
+
+	for _, lookup := range lookups {
+		var rocket models.Rocket
+		err := m.mc.Collection(lookup.collectionName).FindOne(ctx, lookup.filter).Decode(&rocket)
+		if err == nil {
+			return rocket, nil
+		}
+		if err != mongo.ErrNoDocuments {
+			return models.Rocket{}, err
+		}
+	}
+
+	return models.Rocket{}, mongo.ErrNoDocuments
+}
+
+func (s *MainService) GenerateRocketsFromLL2(launchers []int64) error {
+	return s.ensureInt64ExternalIDs(COLLECTION_ROCKET, launchers)
 }
 
 func (m *MainService) GetRockets(q RocketQuery) (models.RocketList, error) {
@@ -163,7 +195,7 @@ func (m *MainService) GetRocket(id int64) (models.RocketSerializer, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	collection := m.mc.Collection(COLLECTION_AGENCY)
+	collection := m.mc.Collection(COLLECTION_ROCKET)
 
 	var rocket models.Rocket
 	if err := collection.FindOne(ctx, bson.M{"id": id}).Decode(&rocket); err != nil {
@@ -189,7 +221,7 @@ func (m *MainService) UpdateRocket(r *models.Rocket) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	collection := m.mc.Collection(COLLECTION_AGENCY)
+	collection := m.mc.Collection(COLLECTION_ROCKET)
 
 	update := bson.M{
 		"$set": r,
@@ -207,116 +239,68 @@ func (m *MainService) UpdateRocket(r *models.Rocket) error {
 	return nil
 }
 
-func (m *MainService) GetPublicRockets(page int) (models.PublicRocketList, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+func (m *MainService) GetPublicRockets(page int, search string) (models.PublicRocketPage, error) {
+	const pageSize = 20
 
-	limit := 20
-	offset := page * limit
-
-	launcherCollection := m.mc.Collection(COLLECTION_LL2_LAUNCHER)
-
-	pipeline := mongo.Pipeline{
-		bson.D{{Key: "$lookup", Value: bson.M{
-			"from":         COLLECTION_AGENCY,
-			"localField":   "id",
-			"foreignField": "external_id",
-			"as":           "rocket_doc",
-		}}},
-		bson.D{{Key: "$unwind", Value: bson.M{"path": "$rocket_doc", "preserveNullAndEmptyArrays": false}}},
-		bson.D{{Key: "$sort", Value: bson.D{{Key: "total_launch_count", Value: -1}}}},
-		bson.D{{Key: "$skip", Value: offset}},
-		bson.D{{Key: "$limit", Value: limit}},
-	}
-
-	cursor, err := launcherCollection.Aggregate(ctx, pipeline)
+	rocketList, err := m.GetRockets(RocketQuery{
+		Limit:     pageSize,
+		Offset:    page * pageSize,
+		Search:    search,
+		SortBy:    "total_launch_count",
+		SortOrder: -1,
+	})
 	if err != nil {
-		return models.PublicRocketList{}, err
+		return models.PublicRocketPage{}, err
 	}
-	defer cursor.Close(ctx)
 
-	var rockets []models.PublicCompactRocket
-	for cursor.Next(ctx) {
-		var doc rocketAggregateDoc
-		if err := cursor.Decode(&doc); err != nil {
-			return models.PublicRocketList{}, err
+	rockets := make([]models.PublicRocketListItem, 0, len(rocketList.Rockets))
+	for _, rocket := range rocketList.Rockets {
+		if rocket.Rocket.ID == 0 {
+			continue
 		}
-		rockets = append(rockets, models.PublicCompactRocket{
-			ID:         doc.RocketDoc.ID,
-			Name:       doc.LL2LauncherConfigNormal.Name,
-			ThumbImage: doc.RocketDoc.ThumbImage,
-		})
+		rockets = append(rockets, buildPublicRocketListItem(rocket.Rocket, rocket.Data))
 	}
 
-	if err := cursor.Err(); err != nil {
-		return models.PublicRocketList{}, err
-	}
-
-	countPipeline := mongo.Pipeline{
-		bson.D{{Key: "$lookup", Value: bson.M{
-			"from":         COLLECTION_AGENCY,
-			"localField":   "id",
-			"foreignField": "external_id",
-			"as":           "rocket_doc",
-		}}},
-		bson.D{{Key: "$unwind", Value: bson.M{"path": "$rocket_doc", "preserveNullAndEmptyArrays": false}}},
-		bson.D{{Key: "$count", Value: "total"}},
-	}
-	countCursor, err := launcherCollection.Aggregate(ctx, countPipeline)
-	if err != nil {
-		return models.PublicRocketList{}, err
-	}
-	defer countCursor.Close(ctx)
-
-	var total int64
-	if countCursor.Next(ctx) {
-		var countDoc struct {
-			Total int64 `bson:"total"`
-		}
-		if err := countCursor.Decode(&countDoc); err != nil {
-			return models.PublicRocketList{}, err
-		}
-		total = countDoc.Total
-	}
-
-	return models.PublicRocketList{
-		Count:   int(total),
+	return models.PublicRocketPage{
+		Count:   rocketList.Count,
 		Rockets: rockets,
 	}, nil
 }
 
-func (m *MainService) GetPublicRocket(id int64) (models.PublicRocketDetail, error) {
+func (m *MainService) GetPublicRocket(id int64) (models.PublicRocketView, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	var rocket models.Rocket
-	err := m.mc.Collection(COLLECTION_AGENCY).FindOne(ctx, bson.M{"id": id}).Decode(&rocket)
+	rocket, err := m.findRocketByCoreID(ctx, id)
 	if err != nil {
-		return models.PublicRocketDetail{}, err
+		return models.PublicRocketView{}, err
 	}
 
 	var ll2Data models.LL2LauncherConfigDetailed
 	err = m.mc.Collection(COLLECTION_LL2_LAUNCHER).FindOne(ctx, bson.M{"id": rocket.ExternalID}).Decode(&ll2Data)
 	if err != nil {
-		return models.PublicRocketDetail{}, err
+		return models.PublicRocketView{}, err
 	}
 
-	var agencyInfo models.PublicCompactAgency
+	var company models.PublicCompanyRef
 	if ll2Data.Manufacturer.ID != 0 {
 		var agency models.Agency
 		err := m.mc.Collection(COLLECTION_AGENCY).FindOne(ctx, bson.M{"external_id": ll2Data.Manufacturer.ID}).Decode(&agency)
-		if err == nil {
-			agencyInfo = models.PublicCompactAgency{
-				ID:         agency.ID,
-				Name:       ll2Data.Manufacturer.Name,
-				ThumbImage: agency.ThumbImage,
-			}
-		} else {
-			// If internal agency not found, at least provide the name from LL2
-			agencyInfo = models.PublicCompactAgency{
-				Name: ll2Data.Manufacturer.Name,
-			}
+		if err != nil && err != mongo.ErrNoDocuments {
+			return models.PublicRocketView{}, err
 		}
+
+		var agencyDoc *models.LL2AgencyDetailed
+		var ll2Agency models.LL2AgencyDetailed
+		err = m.mc.Collection(COLLECTION_LL2_AGENCY).FindOne(ctx, bson.M{"id": ll2Data.Manufacturer.ID}).Decode(&ll2Agency)
+		if err != nil && err != mongo.ErrNoDocuments {
+			return models.PublicRocketView{}, err
+		}
+		if err == nil {
+			agencyDoc = &ll2Agency
+		}
+
+		company = buildPublicCompanyRef(agency, ll2Data.Manufacturer.Name, agencyDoc)
 	}
 
 	launchLimit := 10
@@ -325,61 +309,70 @@ func (m *MainService) GetPublicRocket(id int64) (models.PublicRocketDetail, erro
 
 	launchCursor, err := m.mc.Collection(COLLECTION_LL2_LAUNCH).Find(ctx, launchFilter, launchOpts)
 	if err != nil {
-		return models.PublicRocketDetail{}, err
+		return models.PublicRocketView{}, err
 	}
 	defer launchCursor.Close(ctx)
 
 	var ll2Launches []models.LL2LaunchDetailed
 	if err = launchCursor.All(ctx, &ll2Launches); err != nil {
-		return models.PublicRocketDetail{}, err
+		return models.PublicRocketView{}, err
 	}
 
-	var publicLaunches []models.PublicCompactLaunch
+	var publicLaunches []models.PublicLaunchSummary
 	if len(ll2Launches) > 0 {
 		externalIDs := make([]string, 0, len(ll2Launches))
+		agencyExternalIDs := make([]int64, 0, len(ll2Launches))
+		baseExternalIDs := make([]int64, 0, len(ll2Launches))
 		for _, l := range ll2Launches {
 			externalIDs = append(externalIDs, l.ID)
-		}
-
-		launchMap := make(map[string]models.Launch)
-		lCursor, err := m.mc.Collection(COLLECTION_LAUNCH).Find(ctx, bson.M{"external_id": bson.M{"$in": externalIDs}})
-		if err == nil {
-			defer lCursor.Close(ctx)
-			for lCursor.Next(ctx) {
-				var l models.Launch
-				if err := lCursor.Decode(&l); err == nil {
-					launchMap[l.ExternalID] = l
-				}
+			if l.LaunchServiceProvider.ID != 0 {
+				agencyExternalIDs = append(agencyExternalIDs, int64(l.LaunchServiceProvider.ID))
+			}
+			if l.Pad.Location.ID != 0 {
+				baseExternalIDs = append(baseExternalIDs, int64(l.Pad.Location.ID))
 			}
 		}
 
+		launchMap, err := m.loadLaunchMapByExternalIDs(ctx, externalIDs)
+		if err != nil {
+			return models.PublicRocketView{}, err
+		}
+		agencyMap, err := m.loadAgencyMapByExternalIDs(ctx, agencyExternalIDs)
+		if err != nil {
+			return models.PublicRocketView{}, err
+		}
+		agencyDocMap, err := m.loadLL2AgencyMapByExternalIDs(ctx, agencyExternalIDs)
+		if err != nil {
+			return models.PublicRocketView{}, err
+		}
+		baseMap, err := m.loadLaunchBaseMapByExternalIDs(ctx, baseExternalIDs)
+		if err != nil {
+			return models.PublicRocketView{}, err
+		}
+		rocketMap := map[int64]models.Rocket{rocket.ExternalID: rocket}
+		launcherMap := map[int64]models.LL2LauncherConfigNormal{rocket.ExternalID: ll2Data.LL2LauncherConfigNormal}
+
 		for _, ll2 := range ll2Launches {
-			internalLaunch := launchMap[ll2.ID]
-			publicLaunches = append(publicLaunches, models.PublicCompactLaunch{
-				ID:         internalLaunch.ID,
-				Name:       ll2.Name,
-				LaunchTime: ll2.Net,
-				Status:     ll2.Status.ID,
-				ThumbImage: internalLaunch.ThumbImage,
-				RocketName: ll2.Rocket.Configuration.Name,
-				AgencyName: ll2.LaunchServiceProvider.Name,
-				Location:   ll2.Pad.Location.Name,
-			})
+			launchSummary, include := m.buildPublicLaunchSummary(launchMap[ll2.ID], ll2, rocketMap, launcherMap, agencyMap, agencyDocMap, baseMap)
+			if !include {
+				continue
+			}
+			publicLaunches = append(publicLaunches, launchSummary)
 		}
 	} else {
-		publicLaunches = []models.PublicCompactLaunch{}
+		publicLaunches = []models.PublicLaunchSummary{}
 	}
 
-	return models.PublicRocketDetail{
-		ID:              rocket.ID,
+	return models.PublicRocketView{
+		ID:              publicID(rocket.ID),
 		Name:            ll2Data.Name,
 		Description:     ll2Data.Description,
 		Active:          ll2Data.Active,
 		Reusable:        ll2Data.Reusable,
-		LaunchImage:     rocket.LaunchImage,
-		MainImage:       rocket.MainImage,
+		LaunchImage:     resolveRocketLaunch(rocket, ll2Data.Image),
+		MainImage:       resolveRocketMain(rocket, ll2Data.Image),
 		ImageList:       rocket.ImageList,
-		AgencyInfo:      agencyInfo,
+		Company:         company,
 		Launches:        publicLaunches,
 		LaunchCost:      float64(ll2Data.LaunchCost),
 		Diameter:        ll2Data.Diameter,

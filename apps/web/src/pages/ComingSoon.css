@@ -1,6 +1,6 @@
 .coming-soon-container {
   min-height: 100vh;
-  background: hsl(0 0% 4%);
+  background: var(--color-page-bg);
   display: flex;
   align-items: center;
   justify-content: center;

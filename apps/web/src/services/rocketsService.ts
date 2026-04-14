@@ -1,5 +1,10 @@
 import { apiFetch } from '../lib/api';
-import type { RocketDetail, RocketListItem } from '../types';
+import type { PublicRocketPage, RocketDetail } from '../types';
+
+interface ListQueryOptions {
+  page?: number;
+  search?: string;
+}
 
 interface ApiResponse<T> {
   code: number;
@@ -7,14 +12,18 @@ interface ApiResponse<T> {
   data: T;
 }
 
-interface RocketListResponse {
-  count: number;
-  rockets: RocketListItem[];
+function buildListQuery({ page = 0, search = '' }: ListQueryOptions = {}) {
+  const params = new URLSearchParams({ page: String(page) });
+  const trimmedSearch = search.trim();
+  if (trimmedSearch) {
+    params.set('search', trimmedSearch);
+  }
+  return params.toString();
 }
 
-export async function fetchRockets(): Promise<RocketListItem[]> {
-  const response = await apiFetch<ApiResponse<RocketListResponse>>('/api/v1/rocket');
-  return response.data.rockets;
+export async function fetchRockets(options: ListQueryOptions = {}): Promise<PublicRocketPage> {
+  const response = await apiFetch<ApiResponse<PublicRocketPage>>(`/api/v1/rocket?${buildListQuery(options)}`);
+  return response.data;
 }
 
 export async function fetchRocket(id: string): Promise<RocketDetail> {

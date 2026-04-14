@@ -2,43 +2,44 @@ import { Link } from 'react-router-dom';
 
 const Footer = () => {
   return (
-    <footer className="bg-[#111] border-t border-gray-800">
+    <footer className="border-t border-gray-800 bg-[#111]">
       <div className="container mx-auto px-4 py-12">
         <div className="grid md:grid-cols-3 gap-8">
           <div>
-            <h3 className="text-xl font-bold mb-2">LaunchDate</h3>
-            <p className="text-gray-400">Your comprehensive source for rocket launches, space news, and aerospace information.</p>
+            <div className="mb-4 inline-flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.22em] text-[var(--color-page-fg)]">
+              <img src="/rocket.png" alt="LaunchDate" className="h-5 w-5" />
+              LaunchDate
+            </div>
+            <h3 className="mb-3 text-2xl font-bold">Mission control for launch windows, rockets, and space operators.</h3>
+            <p className="max-w-md text-gray-400">Track upcoming missions, review recent results, and browse the organizations shaping modern spaceflight.</p>
+            <p className="mt-4 text-sm text-gray-500">&copy; 2025 LaunchDate. All Rights Reserved.</p>
           </div>
           <div>
-            <h4 className="font-semibold text-lg mb-3">Quick Links</h4>
+            <h4 className="mb-3 text-lg font-semibold">Quick Links</h4>
             <ul className="space-y-2 text-gray-400">
               <li><Link to="/launches" className="hover:text-white">Launch Dates</Link></li>
               <li><Link to="/rockets" className="hover:text-white">Rockets</Link></li>
-              <li><Link to="/news" className="hover:text-white">News</Link></li>
               <li><Link to="/companies" className="hover:text-white">Companies</Link></li>
               <li><Link to="/bases" className="hover:text-white">Launch Bases</Link></li>
             </ul>
           </div>
           <div>
-            <h4 className="font-semibold text-lg mb-3">Stay Connected</h4>
-            <p className="text-gray-400 mb-4">Subscribe for the latest launch updates and space news.</p>
+            <h4 className="mb-3 text-lg font-semibold">Stay Connected</h4>
+            <p className="mb-4 text-gray-400">Subscribe for launch alerts and notable mission updates.</p>
             <form className="flex">
               <input 
                 type="email" 
                 placeholder="Your email" 
-                className="w-full rounded-l-md bg-gray-800 border-gray-700 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-l-xl border border-gray-700 bg-gray-800 px-4 py-3 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <button 
                 type="submit" 
-                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 rounded-r-md"
+                className="rounded-r-xl bg-blue-600 px-5 font-semibold text-white hover:bg-blue-700"
               >
                 Subscribe
               </button>
             </form>
           </div>
-        </div>
-        <div className="mt-12 border-t border-gray-800 pt-8 text-center text-gray-500 text-sm">
-          <p>&copy; 2025 LaunchDate. All Rights Reserved.</p>
         </div>
       </div>
     </footer>

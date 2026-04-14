@@ -23,7 +23,7 @@ func (s *LL2Service) GetLauncherFromAPI(id int) (*models.LL2LauncherConfigDetail
 	return launcher, err
 }
 
-func (s *LL2Service) SaveLaunchersToDB(launchers []models.LL2LauncherConfigNormal) error {
+func (s *LL2Service) SaveLaunchersToDB(launchers []models.LL2LauncherConfigDetailed) error {
 	for _, launcher := range launchers {
 		filter := map[string]any{
 			"id": launcher.ID,

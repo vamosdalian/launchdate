@@ -15,28 +15,19 @@ const COLLECTION_AGENCY = "agency"
 const COLLECTION_LL2_AGENCY = "ll2_agency"
 
 func (s *MainService) GenerateAgencyFromLL2(ll2ids []int64) error {
-	colleciton := s.mc.Collection(COLLECTION_AGENCY)
-
-	var docs []any
-	for _, ll2id := range ll2ids {
-		docs = append(docs, models.Agency{
-			ID:         s.sn.Generate().Int64(),
-			ExternalID: ll2id,
-		})
-	}
-	_, err := colleciton.InsertMany(context.Background(), docs)
-
-	return err
+	return s.ensureInt64ExternalIDs(COLLECTION_AGENCY, ll2ids)
 }
 
 type AgencyQuery struct {
-	Limit     int
-	Offset    int
-	Name      string
-	Type      string
-	Country   string
-	SortBy    string
-	SortOrder int
+	Limit      int
+	Offset     int
+	Search     string
+	Name       string
+	Type       string
+	Country    string
+	SortBy     string
+	SortOrder  int
+	ShowOnHome *bool
 }
 
 func (q AgencyQuery) sortFieldAndOrder() (string, int) {
@@ -54,18 +45,54 @@ func (q AgencyQuery) sortFieldAndOrder() (string, int) {
 	}
 }
 
-func buildAgencyFilter(q AgencyQuery) bson.M {
-	filter := bson.M{}
+func buildAgencyFilter(q AgencyQuery, externalIDs []int) bson.M {
+	filters := make([]bson.M, 0, 4)
+	if searchClause := buildTextSearchClause(q.Search, "name", "type.name", "country.name"); len(searchClause) > 0 {
+		filters = append(filters, searchClause)
+	}
+	if len(externalIDs) > 0 {
+		filters = append(filters, bson.M{"id": bson.M{"$in": externalIDs}})
+	}
 	if name := strings.TrimSpace(q.Name); name != "" {
-		filter["name"] = bson.M{"$regex": name, "$options": "i"}
+		filters = append(filters, bson.M{"name": bson.M{"$regex": name, "$options": "i"}})
 	}
 	if agencyType := strings.TrimSpace(q.Type); agencyType != "" {
-		filter["type.name"] = bson.M{"$regex": agencyType, "$options": "i"}
+		filters = append(filters, bson.M{"type.name": bson.M{"$regex": agencyType, "$options": "i"}})
 	}
 	if country := strings.TrimSpace(q.Country); country != "" {
-		filter["country.name"] = bson.M{"$regex": country, "$options": "i"}
+		filters = append(filters, bson.M{"country.name": bson.M{"$regex": country, "$options": "i"}})
 	}
-	return filter
+	return combineFilters(filters...)
+}
+
+func (s *MainService) loadAgencyExternalIDsByHomeFlag(ctx context.Context, showOnHome bool) ([]int, error) {
+	cursor, err := s.mc.Collection(COLLECTION_AGENCY).Find(
+		ctx,
+		bson.M{"show_on_home": showOnHome},
+		options.Find().SetProjection(bson.M{"external_id": 1}),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	externalIDs := make([]int, 0)
+	for cursor.Next(ctx) {
+		var agency models.Agency
+		if err := cursor.Decode(&agency); err != nil {
+			return nil, err
+		}
+		if agency.ExternalID == 0 {
+			continue
+		}
+		externalIDs = append(externalIDs, int(agency.ExternalID))
+	}
+
+	if err := cursor.Err(); err != nil {
+		return nil, err
+	}
+
+	return externalIDs, nil
 }
 
 func (s *MainService) GetAgencies(q AgencyQuery) (models.AgencyList, error) {
@@ -73,7 +100,19 @@ func (s *MainService) GetAgencies(q AgencyQuery) (models.AgencyList, error) {
 	defer cancel()
 
 	ll2Collection := s.mc.Collection(COLLECTION_LL2_AGENCY)
-	filter := buildAgencyFilter(q)
+	allowedExternalIDs := []int(nil)
+	if q.ShowOnHome != nil {
+		var err error
+		allowedExternalIDs, err = s.loadAgencyExternalIDsByHomeFlag(ctx, *q.ShowOnHome)
+		if err != nil {
+			return models.AgencyList{}, err
+		}
+		if len(allowedExternalIDs) == 0 {
+			return models.AgencyList{Count: 0, Agencies: []models.AgencySerializer{}}, nil
+		}
+	}
+
+	filter := buildAgencyFilter(q, allowedExternalIDs)
 
 	total, err := ll2Collection.CountDocuments(ctx, filter)
 	if err != nil {
@@ -188,9 +227,10 @@ func (m *MainService) UpdateAgency(a *models.Agency) error {
 
 	update := bson.M{
 		"$set": bson.M{
-			"thumb_image": a.ThumbImage,
-			"images":      a.Images,
-			"social_url":  a.SocialUrl,
+			"thumb_image":  a.ThumbImage,
+			"images":       a.Images,
+			"social_url":   a.SocialUrl,
+			"show_on_home": a.ShowOnHome,
 		},
 	}
 
@@ -204,4 +244,239 @@ func (m *MainService) UpdateAgency(a *models.Agency) error {
 	}
 
 	return nil
+}
+
+func firstAgencyCountryName(countries []models.LL2Country) string {
+	if len(countries) == 0 {
+		return ""
+	}
+	return countries[0].Name
+}
+
+func isPreferredWebsiteLabel(value string) bool {
+	label := strings.ToLower(strings.TrimSpace(value))
+	switch label {
+	case "website", "homepage", "official", "official website", "site", "official site":
+		return true
+	default:
+		return false
+	}
+}
+
+func firstSocialURL(urls []models.SocialUrl) string {
+	for _, social := range urls {
+		if isPreferredWebsiteLabel(social.Name) && strings.TrimSpace(social.URL) != "" {
+			return social.URL
+		}
+	}
+	return ""
+}
+
+func firstDetailedSocialURL(urls []models.LL2SocialMediaLink) string {
+	for _, social := range urls {
+		if isPreferredWebsiteLabel(social.SocialMedia.Name) && strings.TrimSpace(social.URL) != "" {
+			return social.URL
+		}
+	}
+	return ""
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func (s *MainService) GetPublicCompanies(page int, search string, showOnHomeOnly bool) (models.PublicCompanyPage, error) {
+	const pageSize = 20
+	var showOnHome *bool
+	if showOnHomeOnly {
+		showOnHome = &showOnHomeOnly
+	}
+
+	agencyList, err := s.GetAgencies(AgencyQuery{
+		Limit:      pageSize,
+		Offset:     page * pageSize,
+		Search:     search,
+		SortBy:     "name",
+		SortOrder:  1,
+		ShowOnHome: showOnHome,
+	})
+	if err != nil {
+		return models.PublicCompanyPage{}, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	externalIDs := make([]int64, 0, len(agencyList.Agencies))
+	for _, agency := range agencyList.Agencies {
+		if agency.ExternalID == 0 {
+			continue
+		}
+		externalIDs = append(externalIDs, agency.ExternalID)
+	}
+
+	agencyDocMap, err := s.loadLL2AgencyMapByExternalIDs(ctx, externalIDs)
+	if err != nil {
+		return models.PublicCompanyPage{}, err
+	}
+
+	companies := make([]models.PublicCompanyListItem, 0, len(agencyList.Agencies))
+	for _, agency := range agencyList.Agencies {
+		if agency.Agency.ID == 0 {
+			continue
+		}
+		doc, ok := agencyDocMap[agency.ExternalID]
+		if !ok {
+			doc = models.LL2AgencyDetailed{LL2AgencyNormal: agency.Data}
+		}
+		companies = append(companies, buildPublicCompanyListItem(agency.Agency, doc))
+	}
+
+	return models.PublicCompanyPage{
+		Count:     agencyList.Count,
+		Companies: companies,
+	}, nil
+}
+
+func (s *MainService) GetPublicCompany(id int64) (models.PublicCompanyView, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var agency models.Agency
+	err := s.mc.Collection(COLLECTION_AGENCY).FindOne(ctx, bson.M{"id": id}).Decode(&agency)
+	if err != nil {
+		return models.PublicCompanyView{}, err
+	}
+
+	var doc models.LL2AgencyDetailed
+	if err := s.mc.Collection(COLLECTION_LL2_AGENCY).FindOne(ctx, bson.M{"id": int(agency.ExternalID)}).Decode(&doc); err != nil {
+		return models.PublicCompanyView{}, err
+	}
+
+	launcherCursor, err := s.mc.Collection(COLLECTION_LL2_LAUNCHER).Find(
+		ctx,
+		bson.M{"manufacturer.id": int(agency.ExternalID)},
+		options.Find().SetSort(bson.D{{Key: "total_launch_count", Value: -1}}).SetLimit(12),
+	)
+	if err != nil {
+		return models.PublicCompanyView{}, err
+	}
+	defer launcherCursor.Close(ctx)
+
+	ll2Launchers := make([]models.LL2LauncherConfigNormal, 0)
+	rocketExternalIDs := make([]int64, 0)
+	for launcherCursor.Next(ctx) {
+		var launcher models.LL2LauncherConfigNormal
+		if err := launcherCursor.Decode(&launcher); err != nil {
+			return models.PublicCompanyView{}, err
+		}
+		ll2Launchers = append(ll2Launchers, launcher)
+		if launcher.ID != 0 {
+			rocketExternalIDs = append(rocketExternalIDs, int64(launcher.ID))
+		}
+	}
+	if err := launcherCursor.Err(); err != nil {
+		return models.PublicCompanyView{}, err
+	}
+
+	rocketMap, err := s.loadRocketMapByExternalIDs(ctx, rocketExternalIDs)
+	if err != nil {
+		return models.PublicCompanyView{}, err
+	}
+
+	rockets := make([]models.PublicRocketListItem, 0, len(ll2Launchers))
+	for _, launcher := range ll2Launchers {
+		rocket := findExistingRocket(rocketMap, int64(launcher.ID))
+		if rocket.ID == 0 {
+			continue
+		}
+		rockets = append(rockets, buildPublicRocketListItem(rocket, launcher))
+	}
+
+	launchCursor, err := s.mc.Collection(COLLECTION_LL2_LAUNCH).Find(
+		ctx,
+		bson.M{"launch_service_provider.id": int(agency.ExternalID)},
+		options.Find().SetSort(bson.D{{Key: "net", Value: -1}}).SetLimit(6),
+	)
+	if err != nil {
+		return models.PublicCompanyView{}, err
+	}
+	defer launchCursor.Close(ctx)
+
+	ll2Launches := make([]models.LL2LaunchDetailed, 0)
+	launchExternalIDs := make([]string, 0)
+	launchRocketExternalIDs := make([]int64, 0)
+	launchBaseExternalIDs := make([]int64, 0)
+	for launchCursor.Next(ctx) {
+		var ll2Launch models.LL2LaunchDetailed
+		if err := launchCursor.Decode(&ll2Launch); err != nil {
+			return models.PublicCompanyView{}, err
+		}
+		ll2Launches = append(ll2Launches, ll2Launch)
+		launchExternalIDs = append(launchExternalIDs, ll2Launch.ID)
+		if ll2Launch.Rocket.Configuration.ID != 0 {
+			launchRocketExternalIDs = append(launchRocketExternalIDs, int64(ll2Launch.Rocket.Configuration.ID))
+		}
+		if ll2Launch.Pad.Location.ID != 0 {
+			launchBaseExternalIDs = append(launchBaseExternalIDs, int64(ll2Launch.Pad.Location.ID))
+		}
+	}
+	if err := launchCursor.Err(); err != nil {
+		return models.PublicCompanyView{}, err
+	}
+
+	launchMap, err := s.loadLaunchMapByExternalIDs(ctx, launchExternalIDs)
+	if err != nil {
+		return models.PublicCompanyView{}, err
+	}
+	launchRocketMap, err := s.loadRocketMapByExternalIDs(ctx, launchRocketExternalIDs)
+	if err != nil {
+		return models.PublicCompanyView{}, err
+	}
+	launcherMap, err := s.loadLauncherConfigMapByExternalIDs(ctx, launchRocketExternalIDs)
+	if err != nil {
+		return models.PublicCompanyView{}, err
+	}
+	baseMap, err := s.loadLaunchBaseMapByExternalIDs(ctx, launchBaseExternalIDs)
+	if err != nil {
+		return models.PublicCompanyView{}, err
+	}
+	agencyMap := map[int64]models.Agency{agency.ExternalID: agency}
+	agencyDocMap := map[int64]models.LL2AgencyDetailed{agency.ExternalID: doc}
+
+	launches := make([]models.PublicLaunchSummary, 0, len(ll2Launches))
+	for _, ll2Launch := range ll2Launches {
+		launchSummary, include := s.buildPublicLaunchSummary(launchMap[ll2Launch.ID], ll2Launch, launchRocketMap, launcherMap, agencyMap, agencyDocMap, baseMap)
+		if !include {
+			continue
+		}
+		launches = append(launches, launchSummary)
+	}
+
+	basic := buildPublicCompanyListItem(agency, doc)
+	return models.PublicCompanyView{
+		ID:           basic.ID,
+		Name:         basic.Name,
+		Description:  basic.Description,
+		Founded:      basic.Founded,
+		Founder:      basic.Founder,
+		Headquarters: basic.Headquarters,
+		Employees:    basic.Employees,
+		Website:      basic.Website,
+		ImageURL:     basic.ImageURL,
+		Rockets:      rockets,
+		Launches:     launches,
+		Stats: models.PublicCompanyStats{
+			RocketCount:        len(rockets),
+			LaunchCount:        doc.TotalLaunchCount,
+			SuccessfulLaunches: doc.SuccessfulLaunches,
+			FailedLaunches:     doc.FailedLaunches,
+			PendingLaunches:    doc.PendingLaunches,
+		},
+	}, nil
 }

@@ -247,3 +247,5 @@ export interface LL2LauncherFamily {
   description?: string;
   orbit?: LL2LauncherFamilyOrbit;
 }
+
+export type { PageBackground, UpdatePageBackgroundPayload } from './page-background';

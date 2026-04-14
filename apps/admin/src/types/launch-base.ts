@@ -1,12 +1,12 @@
 import type { LL2LocationSerializerWithPads } from './ll2-location';
 
 export interface LaunchBase {
-  id: number;
+  id: string;
   external_id: number;
 }
 
 export interface LaunchBaseSerializer {
-  id: number;
+  id: string;
   data: LL2LocationSerializerWithPads;
 }
 

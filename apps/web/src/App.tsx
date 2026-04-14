@@ -9,12 +9,11 @@ import Rockets from './pages/Rockets';
 import RocketDetail from './pages/RocketDetail';
 import Launches from './pages/Launches';
 import LaunchDetail from './pages/LaunchDetail';
-import News from './pages/News';
-import NewsDetail from './pages/NewsDetail';
 import LaunchBases from './pages/LaunchBases';
 import LaunchBaseDetail from './pages/LaunchBaseDetail';
 import Companies from './pages/Companies';
 import CompanyDetail from './pages/CompanyDetail';
+import { PageBackgroundProvider } from './contexts/PageBackgroundContext';
 import './App.css';
 
 function AppContent() {
@@ -40,8 +39,6 @@ function AppContent() {
           <Route path="/rockets/:id" element={<RocketDetail />} />
           <Route path="/launches" element={<Launches />} />
           <Route path="/launches/:id" element={<LaunchDetail />} />
-          <Route path="/news" element={<News />} />
-          <Route path="/news/:id" element={<NewsDetail />} />
           <Route path="/bases" element={<LaunchBases />} />
           <Route path="/bases/:id" element={<LaunchBaseDetail />} />
           <Route path="/companies" element={<Companies />} />
@@ -60,9 +57,11 @@ function App() {
 
 function AppWrapper() {
   return (
-    <Router>
-      <App />
-    </Router>
+    <PageBackgroundProvider>
+      <Router>
+        <App />
+      </Router>
+    </PageBackgroundProvider>
   );
 }
 

@@ -2,6 +2,7 @@ package ll2
 
 import (
 	"context"
+	"time"
 
 	"github.com/vamosdalian/launchdate-backend/internal/models"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -23,9 +24,17 @@ func (s *LL2Service) GetLaunchFromAPI(launchId string) (*models.LL2LaunchDetaile
 	return launch, err
 }
 
-func (s *LL2Service) GetLaunchUpComingFromAPI(launchId string, limit, offset int) (*models.LL2Response, error) {
+func (s *LL2Service) GetLaunchesUpdatedFromAPI(since, until time.Time, limit, offset int) (*models.LL2Response, error) {
 	var launches *models.LL2Response
-	err := s.GetDataFromAPI("launches/upcoming/"+launchId, limit, offset, &launches, "ordering=net")
+	err := s.GetDataFromAPI(
+		"launches",
+		limit,
+		offset,
+		&launches,
+		"ordering=-last_updated",
+		"last_updated__gte="+since.UTC().Format(time.RFC3339),
+		"last_updated__lte="+until.UTC().Format(time.RFC3339),
+	)
 
 	return launches, err
 }
@@ -108,4 +117,20 @@ func (s *LL2Service) GetLatestLaunchFromDB() (*models.LL2LaunchDetailed, error) 
 	}
 
 	return &launch, nil
+}
+
+func (s *LL2Service) HasLaunchesInNetWindow(start, end time.Time) (bool, error) {
+	filter := map[string]any{
+		"net": map[string]any{
+			"$gte": start.UTC().Format(time.RFC3339),
+			"$lte": end.UTC().Format(time.RFC3339),
+		},
+	}
+
+	count, err := s.mongoClient.Collection(LL2LAUNCH).CountDocuments(context.Background(), filter)
+	if err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
 }

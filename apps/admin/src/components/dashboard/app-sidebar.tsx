@@ -65,6 +65,7 @@ const navigation = [
     ],
   },
   { path: '/images', label: 'Images', icon: ImageIcon },
+  { path: '/page-backgrounds', label: 'Page Backgrounds', icon: ImageIcon },
 ];
 
 export function AppSidebar(props: ComponentProps<typeof Sidebar>) {

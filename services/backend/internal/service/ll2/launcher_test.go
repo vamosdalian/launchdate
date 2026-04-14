@@ -12,18 +12,32 @@ func TestLL2Service_LauncherDB(t *testing.T) {
 	clearCollections(t, LL2LAUNCHER, LL2LAUNCHERFAMILY)
 
 	t.Run("Launchers", func(t *testing.T) {
-		launchers := []models.LL2LauncherConfigNormal{
+		launchers := []models.LL2LauncherConfigDetailed{
 			{
-				LL2LauncherConfigList: models.LL2LauncherConfigList{
-					ID:   1,
-					Name: "Launcher One",
+				LL2LauncherConfigNormal: models.LL2LauncherConfigNormal{
+					LL2LauncherConfigList: models.LL2LauncherConfigList{
+						ID:   1,
+						Name: "Launcher One",
+					},
 				},
+				Description: "Launcher One Description",
+				Length:      70,
+				Diameter:    5.2,
+				LaunchMass:  549054,
+				LeoCapacity: 22800,
+				LaunchCost:  67000000,
+				ToThrust:    7607,
 			},
 			{
-				LL2LauncherConfigList: models.LL2LauncherConfigList{
-					ID:   2,
-					Name: "Launcher Two",
+				LL2LauncherConfigNormal: models.LL2LauncherConfigNormal{
+					LL2LauncherConfigList: models.LL2LauncherConfigList{
+						ID:   2,
+						Name: "Launcher Two",
+					},
 				},
+				Description: "Launcher Two Description",
+				Length:      57,
+				Diameter:    3.7,
 			},
 		}
 
@@ -40,6 +54,13 @@ func TestLL2Service_LauncherDB(t *testing.T) {
 		single, err := s.GetLauncherByIDFromDB(1)
 		assert.NoError(t, err)
 		assert.Equal(t, "Launcher One", single.Name)
+		assert.Equal(t, "Launcher One Description", single.Description)
+		assert.Equal(t, 70.0, single.Length)
+		assert.Equal(t, 5.2, single.Diameter)
+		assert.Equal(t, 549054.0, single.LaunchMass)
+		assert.Equal(t, 22800.0, single.LeoCapacity)
+		assert.Equal(t, 67000000, single.LaunchCost)
+		assert.Equal(t, 7607.0, single.ToThrust)
 
 		_, err = s.GetLauncherByIDFromDB(999)
 		assert.Error(t, err)

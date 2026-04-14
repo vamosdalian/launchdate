@@ -9,7 +9,7 @@ export interface ImageThumb {
 }
 
 export interface Image {
-  id: number;
+  id: string;
   key: string;
   url: string;
   name: string;
@@ -27,7 +27,7 @@ export interface ImageListResponse {
 }
 
 export interface GenerateThumbnailParams {
-  id: number;
+  id: string;
   width: number;
   height: number;
 }

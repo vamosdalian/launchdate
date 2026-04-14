@@ -26,6 +26,7 @@ import LL2LaunchPads from './pages/launch-bases/LL2LaunchPads';
 import ProdCompanies from './pages/companies/ProdCompanies';
 import LL2Companies from './pages/companies/LL2Companies';
 import Images from './pages/Images';
+import PageBackgrounds from './pages/page-backgrounds/PageBackgrounds';
 
 const ProtectedRoute: React.FC = () => {
   const [status, setStatus] = useState<'pending' | 'authorized' | 'unauthorized'>('pending');
@@ -128,6 +129,7 @@ function App() {
             <Route path="/companies/prod" element={<ProdCompanies />} />
             <Route path="/companies/ll2" element={<LL2Companies />} />
             <Route path="/images" element={<Images />} />
+            <Route path="/page-backgrounds" element={<PageBackgrounds />} />
           </Route>
         </Route>
       </Routes>

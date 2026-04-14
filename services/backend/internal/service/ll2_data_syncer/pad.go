@@ -10,13 +10,15 @@ import (
 type PadSyncer struct {
 	*BaseSyncer
 	ll2Service *ll2.LL2Service
+	report     func(map[string]interface{})
 	offset     int
 	total      int
 }
 
-func NewPadSyncer(rl util.RateLimiter, ll2Service *ll2.LL2Service) *PadSyncer {
+func NewPadSyncer(rl util.RateLimiter, ll2Service *ll2.LL2Service, report func(map[string]interface{})) *PadSyncer {
 	ps := &PadSyncer{
 		ll2Service: ll2Service,
+		report:     report,
 	}
 	ps.BaseSyncer = NewBaseSyncer(rl, ps.sync)
 	return ps
@@ -45,8 +47,15 @@ func (ps *PadSyncer) sync() {
 	// No core generation needed for Pads currently
 
 	ps.offset += len(resp.Results)
+	ps.notifyProgress()
 
 	if ps.offset >= ps.total {
 		ps.requestStop()
+	}
+}
+
+func (ps *PadSyncer) notifyProgress() {
+	if ps.report != nil {
+		ps.report(buildCountProgress(ps.offset, ps.total))
 	}
 }

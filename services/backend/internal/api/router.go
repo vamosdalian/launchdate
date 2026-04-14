@@ -19,10 +19,15 @@ func SetupRouter(handler *Handler) *gin.Engine {
 	apiV1 := router.Group("/api/v1")
 	{
 		apiV1.GET("/health", handler.Health)
+		apiV1.GET("/page-backgrounds", handler.GetPublicPageBackgrounds)
 		apiV1.GET("/launch", handler.GetPublicLaunches)
 		apiV1.GET("/launch/:id", handler.GetPublicLaunchByID)
 		apiV1.GET("/rocket", handler.GetPublicRockets)
 		apiV1.GET("/rocket/:id", handler.GetPublicRocketByID)
+		apiV1.GET("/companies", handler.GetPublicCompanies)
+		apiV1.GET("/companies/:id", handler.GetPublicCompanyByID)
+		apiV1.GET("/launch-bases", handler.GetPublicLaunchBases)
+		apiV1.GET("/launch-bases/:id", handler.GetPublicLaunchBaseByID)
 
 		auth := apiV1.Group("/auth")
 		{
@@ -37,6 +42,8 @@ func SetupRouter(handler *Handler) *gin.Engine {
 		data.Use(middleware.AuthMiddleware(handler.jwtM, handler.logger))
 		{
 			data.GET("/stats", handler.GetStats)
+			data.GET("/page-backgrounds", handler.GetPageBackgrounds)
+			data.PUT("/page-backgrounds/:pageKey", handler.UpdatePageBackground)
 			data.GET("/rockets", handler.GetRockets)
 			data.GET("/rockets/:id", handler.GetRocketByID)
 			data.PUT("/rockets/:id", handler.UpdateRocket)
@@ -64,6 +71,7 @@ func SetupRouter(handler *Handler) *gin.Engine {
 		{
 			task.POST("", handler.StartTask)
 			task.GET("", handler.GetTask)
+			task.GET("/history", handler.GetTaskHistory)
 			task.POST("/action", handler.TaskAction)
 		}
 

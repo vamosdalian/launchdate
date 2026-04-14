@@ -12,14 +12,16 @@ type AgencySyncer struct {
 	*BaseSyncer
 	ll2Service *ll2.LL2Service
 	core       *core.MainService
+	report     func(map[string]interface{})
 	offset     int
 	total      int
 }
 
-func NewAgencySyncer(rl util.RateLimiter, ll2Service *ll2.LL2Service, core *core.MainService) *AgencySyncer {
+func NewAgencySyncer(rl util.RateLimiter, ll2Service *ll2.LL2Service, core *core.MainService, report func(map[string]interface{})) *AgencySyncer {
 	as := &AgencySyncer{
 		ll2Service: ll2Service,
 		core:       core,
+		report:     report,
 	}
 	as.BaseSyncer = NewBaseSyncer(rl, as.sync)
 	return as
@@ -47,9 +49,16 @@ func (as *AgencySyncer) sync() {
 	}
 
 	as.offset += len(resp.Results)
+	as.notifyProgress()
 
 	if as.offset >= as.total {
 		as.requestStop()
+	}
+}
+
+func (as *AgencySyncer) notifyProgress() {
+	if as.report != nil {
+		as.report(buildCountProgress(as.offset, as.total))
 	}
 }
 

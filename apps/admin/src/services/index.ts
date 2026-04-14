@@ -7,6 +7,7 @@ export { companyService } from './companyService';
 export { statsService } from './statsService';
 export { taskService } from './taskService';
 export * as imageService from './imageService';
+export { pageBackgroundService } from './pageBackgroundService';
 export type { ApiError } from './apiClient';
 export type { DashboardStats } from './statsService';
 // export type { ProdRocketListItem } from './rocketService';

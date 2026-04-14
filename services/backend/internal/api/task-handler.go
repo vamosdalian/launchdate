@@ -1,9 +1,11 @@
 package api
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	ll2datasyncer "github.com/vamosdalian/launchdate-backend/internal/service/ll2_data_syncer"
 )
 
 type StartTaskRequest struct {
@@ -22,16 +24,33 @@ func (h *Handler) StartTask(c *gin.Context) {
 	}
 
 	syncType := strings.ToLower(strings.TrimSpace(req.Type))
-	if err := h.ll2syncer.InitSync(syncType); err != nil {
+	task, err := h.ll2syncer.InitSync(syncType)
+	if err != nil {
 		h.Error(c, err.Error())
 		return
 	}
 
-	h.Success(c, "task started successfully")
+	h.Json(c, task)
 }
 
 func (h *Handler) GetTask(c *gin.Context) {
 	h.Json(c, h.ll2syncer.GetCurrentTask())
+}
+
+func (h *Handler) GetTaskHistory(c *gin.Context) {
+	limit, err := strconv.Atoi(c.DefaultQuery("limit", "10"))
+	if err != nil {
+		h.Error(c, "invalid limit")
+		return
+	}
+
+	tasks, err := h.ll2syncer.GetTaskHistory(limit)
+	if err != nil {
+		h.Error(c, "failed to get task history: "+err.Error())
+		return
+	}
+
+	h.Json(c, tasks)
 }
 
 func (h *Handler) TaskAction(c *gin.Context) {
@@ -43,14 +62,17 @@ func (h *Handler) TaskAction(c *gin.Context) {
 
 	action := strings.ToLower(strings.TrimSpace(req.Action))
 
-	var err error
+	var (
+		task *ll2datasyncer.TaskInfo
+		err  error
+	)
 	switch action {
 	case "pause":
-		err = h.ll2syncer.PauseSync()
+		task, err = h.ll2syncer.PauseSync()
 	case "resume":
-		err = h.ll2syncer.ResumeSync()
+		task, err = h.ll2syncer.ResumeSync()
 	case "cancel":
-		err = h.ll2syncer.CancelSync()
+		task, err = h.ll2syncer.CancelSync()
 	default:
 		h.Error(c, "unknown action")
 		return
@@ -61,5 +83,5 @@ func (h *Handler) TaskAction(c *gin.Context) {
 		return
 	}
 
-	h.Success(c, "task action applied successfully")
+	h.Json(c, task)
 }

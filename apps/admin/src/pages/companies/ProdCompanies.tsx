@@ -50,28 +50,61 @@ import { toast } from 'sonner';
 
 interface CompanyRow {
   id: string;
-  backendId?: number;
+  backendId: string | null;
+  externalId: number | null;
   name: string;
   founder?: string;
   founded?: number;
   headquarters?: string;
   employees?: number;
   website?: string;
+  showOnHome: boolean;
 }
+
+const getBackendAgencyId = (company: AgencySerializer) => {
+  const normalizedId = company.id?.trim();
+  return normalizedId ? normalizedId : null;
+};
+
+const getCompanyRowKey = (company: AgencySerializer) => {
+  const backendId = getBackendAgencyId(company);
+  if (backendId !== null) {
+    return `agency-${backendId}`;
+  }
+
+  if (company.external_id > 0) {
+    return `external-${company.external_id}`;
+  }
+
+  return `ll2-${company.data.id}`;
+};
+
+const findOfficialWebsite = (socialUrls: AgencySerializer['social_url']) => {
+  const preferred = socialUrls?.find((social) => {
+    const label = social.name.trim().toLowerCase();
+    return label === 'website' || label === 'homepage' || label === 'official' || label === 'official website';
+  });
+
+  return preferred?.url;
+};
 
 const mapProdCompany = (company: AgencySerializer): CompanyRow => {
   const data = company.data;
-  const website = company.social_url?.find(s => s.name === 'Website' || s.name === 'Homepage')?.url;
+  const website = findOfficialWebsite(company.social_url);
+  const backendId = getBackendAgencyId(company);
+  const displayId = backendId ?? (company.external_id || company.data.id);
   
   return {
-    id: String(company.id),
-    backendId: company.id,
+    id: String(displayId),
+    backendId,
+    externalId: company.external_id > 0 ? company.external_id : company.data.id,
     name: data.name || 'Unknown',
     founder: data.administrator || undefined,
     founded: data.founding_year || undefined,
     headquarters: undefined, // Not available in LL2AgencyNormal directly
     employees: undefined, // Not available in LL2AgencyNormal
     website: website,
+    showOnHome: company.show_on_home ?? false,
   };
 };
 
@@ -92,8 +125,7 @@ const defaultFilters: CompanyFilterState = {
 };
 
 export default function ProdCompanies() {
-  const [rows, setRows] = useState<CompanyRow[]>([]);
-  const [rawRows, setRawRows] = useState<unknown[]>([]);
+  const [rawRows, setRawRows] = useState<AgencySerializer[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
@@ -107,7 +139,8 @@ export default function ProdCompanies() {
     thumb_image: string;
     images: string[];
     social_url: { name: string; url: string }[];
-  }>({ thumb_image: "", images: [], social_url: [] });
+    show_on_home: boolean;
+  }>({ thumb_image: "", images: [], social_url: [], show_on_home: false });
   const [filterForm, setFilterForm] = useState<CompanyFilterState>(defaultFilters);
   const [appliedFilters, setAppliedFilters] = useState<CompanyFilterState>(defaultFilters);
   const perPage = 20;
@@ -116,24 +149,26 @@ export default function ProdCompanies() {
     setFilterForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleEditClick = (company: CompanyRow, rawCompany: AgencySerializer) => {
-    setEditingCompany(company);
+  const handleEditClick = (rawCompany: AgencySerializer) => {
+    setEditingCompany(mapProdCompany(rawCompany));
     setEditForm({
       thumb_image: rawCompany.thumb_image || "",
       images: rawCompany.images || [],
       social_url: rawCompany.social_url || [],
+      show_on_home: rawCompany.show_on_home ?? false,
     });
     setIsEditOpen(true);
   };
 
   const handleUpdateCompany = async () => {
-    if (!editingCompany || !editingCompany.id) return;
+    if (!editingCompany || editingCompany.backendId === null) return;
 
     try {
-      await companyService.updateAgency(editingCompany.id, {
+      await companyService.updateAgency(editingCompany.backendId, {
         thumb_image: editForm.thumb_image,
         images: editForm.images,
         social_url: editForm.social_url,
+        show_on_home: editForm.show_on_home,
       });
 
       toast.success("Company updated successfully");
@@ -210,7 +245,6 @@ export default function ProdCompanies() {
       setTotalCount(count);
 
       if (count === 0) {
-        setRows([]);
         setRawRows([]);
         if (pageNumber !== 1) {
           setPage(1);
@@ -224,11 +258,9 @@ export default function ProdCompanies() {
         return;
       }
 
-      setRows(agencies.map(mapProdCompany));
       setRawRows(agencies);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to fetch companies');
-      setRows([]);
       setRawRows([]);
     } finally {
       setLoading(false);
@@ -399,7 +431,7 @@ export default function ProdCompanies() {
         <CardContent className="p-0">
           {loading ? (
             <div className="p-8 text-center">Loading companies...</div>
-          ) : rows.length === 0 ? (
+          ) : rawRows.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">No companies found.</div>
           ) : (
             <>
@@ -412,12 +444,17 @@ export default function ProdCompanies() {
                     <TableHead>Headquarters</TableHead>
                     <TableHead>Employees</TableHead>
                     <TableHead>Website</TableHead>
+                    <TableHead>Home</TableHead>
                     <TableHead className="text-center">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((row, index) => (
-                    <TableRow key={row.id}>
+                  {rawRows.map((rawCompany) => {
+                    const row = mapProdCompany(rawCompany);
+                    const canEdit = row.backendId !== null;
+
+                    return (
+                    <TableRow key={getCompanyRowKey(rawCompany)}>
                       <TableCell className="font-medium">{row.name}</TableCell>
                       <TableCell>{row.founder || 'N/A'}</TableCell>
                       <TableCell>{row.founded || 'N/A'}</TableCell>
@@ -437,9 +474,10 @@ export default function ProdCompanies() {
                           'N/A'
                         )}
                       </TableCell>
+                      <TableCell>{row.showOnHome ? 'Yes' : 'No'}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {typeof row.backendId === 'number' ? (
+                          {canEdit ? (
                             <>
                               <TooltipProvider>
                                 <Tooltip>
@@ -447,10 +485,7 @@ export default function ProdCompanies() {
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      onClick={() => {
-                                        const rawCompany = rawRows[index] as AgencySerializer;
-                                        handleEditClick(row, rawCompany);
-                                      }}
+                                      onClick={() => handleEditClick(rawCompany)}
                                     >
                                       <Pencil className="h-4 w-4" />
                                     </Button>
@@ -467,8 +502,7 @@ export default function ProdCompanies() {
                                       variant="ghost"
                                       size="icon"
                                       onClick={() => {
-                                        const rawCompany = rawRows[index];
-                                        setViewingCompany(rawCompany || null);
+                                        setViewingCompany(rawCompany);
                                         setIsSheetOpen(true);
                                       }}
                                     >
@@ -487,7 +521,7 @@ export default function ProdCompanies() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  )})}
                 </TableBody>
               </Table>
               {renderPagination()}
@@ -522,6 +556,26 @@ export default function ProdCompanies() {
             <div className="grid grid-cols-4 items-center gap-4">
               <Label className="text-right">Name</Label>
               <Input value={editingCompany?.name || ''} disabled className="col-span-3" />
+            </div>
+
+            <div className="grid grid-cols-4 items-start gap-4">
+              <Label className="text-right pt-2">Home Visibility</Label>
+              <div className="col-span-3 flex min-h-10 items-center">
+                <label className="flex items-center gap-3 text-sm font-medium">
+                  <input
+                    type="checkbox"
+                    checked={editForm.show_on_home}
+                    onChange={(event) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        show_on_home: event.target.checked,
+                      }))
+                    }
+                    className="h-4 w-4 rounded border border-input"
+                  />
+                  Show this company on the web home page
+                </label>
+              </div>
             </div>
 
             <div className="grid grid-cols-4 items-start gap-4">

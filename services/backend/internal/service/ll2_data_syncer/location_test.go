@@ -13,7 +13,7 @@ func TestLocationSyncer_Sync(t *testing.T) {
 	clearCollections(t, "ll2_location", "launch_base")
 
 	rl := &mockRateLimiter{ch: make(chan struct{})}
-	syncer := NewLocationSyncer(rl, ll2Service, coreService)
+	syncer := NewLocationSyncer(rl, ll2Service, coreService, nil)
 
 	syncer.Start()
 

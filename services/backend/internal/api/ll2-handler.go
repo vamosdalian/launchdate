@@ -32,7 +32,7 @@ func (h *Handler) StartLL2PadUpdate(c *gin.Context) {
 }
 
 func (h *Handler) startSyncTask(c *gin.Context, syncType, message string) {
-	err := h.ll2syncer.InitSync(syncType)
+	_, err := h.ll2syncer.InitSync(syncType)
 	if err != nil {
 		h.Error(c, err.Error())
 		return

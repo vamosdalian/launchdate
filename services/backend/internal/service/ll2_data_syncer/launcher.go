@@ -12,14 +12,16 @@ type LauncherSyncer struct {
 	*BaseSyncer
 	ll2Service *ll2.LL2Service
 	core       *core.MainService
+	report     func(map[string]interface{})
 	offset     int
 	total      int
 }
 
-func NewLauncherSyncer(rl util.RateLimiter, ll2Service *ll2.LL2Service, core *core.MainService) *LauncherSyncer {
+func NewLauncherSyncer(rl util.RateLimiter, ll2Service *ll2.LL2Service, core *core.MainService, report func(map[string]interface{})) *LauncherSyncer {
 	ls := &LauncherSyncer{
 		ll2Service: ll2Service,
 		core:       core,
+		report:     report,
 	}
 	ls.BaseSyncer = NewBaseSyncer(rl, ls.sync)
 	return ls
@@ -34,12 +36,7 @@ func (ls *LauncherSyncer) sync() {
 
 	ls.total = resp.Count
 
-	var toSave []models.LL2LauncherConfigNormal
-	for _, r := range resp.Results {
-		toSave = append(toSave, r.LL2LauncherConfigNormal)
-	}
-
-	err = ls.ll2Service.SaveLaunchersToDB(toSave)
+	err = ls.ll2Service.SaveLaunchersToDB(resp.Results)
 	if err != nil {
 		logrus.Errorf("save launchers to db failed: %v", err)
 		return
@@ -53,9 +50,16 @@ func (ls *LauncherSyncer) sync() {
 	}
 
 	ls.offset += len(resp.Results)
+	ls.notifyProgress()
 
 	if ls.offset >= ls.total {
 		ls.requestStop()
+	}
+}
+
+func (ls *LauncherSyncer) notifyProgress() {
+	if ls.report != nil {
+		ls.report(buildCountProgress(ls.offset, ls.total))
 	}
 }
 

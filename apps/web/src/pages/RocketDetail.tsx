@@ -20,7 +20,7 @@ const RocketDetail = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-gray-400">Loading rocket details...</p>
@@ -31,7 +31,7 @@ const RocketDetail = () => {
 
   if (error || !rocket) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-8 max-w-md text-center">
           <h1 className="text-2xl font-bold mb-4 text-white">Rocket Not Found</h1>
           <p className="text-gray-400 mb-6">{error?.message || 'The requested rocket does not exist.'}</p>
@@ -54,7 +54,7 @@ const RocketDetail = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-[#f0f0f0]">
+    <div className="min-h-screen bg-background text-[#f0f0f0]">
       {/* Hero Section - Two Column Layout */}
       <section className="container mx-auto px-4 py-16 md:py-24">
         <div className="max-w-7xl mx-auto">
@@ -77,8 +77,8 @@ const RocketDetail = () => {
                 <h1 className="text-5xl md:text-6xl font-black text-white mb-2">
                   {rocket.name}
                 </h1>
-                {rocket.agency_info && (
-                  <p className="text-2xl text-gray-400 mb-4">{rocket.agency_info.name}</p>
+                {rocket.company && (
+                  <p className="text-2xl text-gray-400 mb-4">{rocket.company.name}</p>
                 )}
                 <div className="flex gap-2">
                   {rocket.active && (
@@ -190,12 +190,12 @@ const RocketDetail = () => {
                       <div className="flex-1 p-3 flex flex-col justify-center min-w-0">
                         <div className="flex justify-between items-start mb-1">
                           <h4 className="font-bold text-white text-sm group-hover:text-blue-400 transition-colors truncate pr-2">{launch.name}</h4>
-                          <Badge className={`text-[10px] px-1.5 py-0 h-5 shrink-0 ${launch.status === 3 ? "bg-green-600" : launch.status === 4 ? "bg-red-600" : "bg-blue-600"}`}>
-                            {launch.status === 3 ? 'Success' : launch.status === 4 ? 'Failure' : 'Scheduled'}
+                          <Badge className={`text-[10px] px-1.5 py-0 h-5 shrink-0 ${launch.status === 'success' ? "bg-green-600" : launch.status === 'failure' ? "bg-red-600" : "bg-blue-600"}`}>
+                            {launch.status === 'success' ? 'Success' : launch.status === 'failure' ? 'Failure' : launch.status_label}
                           </Badge>
                         </div>
                         <p className="text-xs text-gray-400 mb-1">{new Date(launch.launch_time).toLocaleDateString()}</p>
-                        <p className="text-xs text-gray-500 truncate">{launch.location}</p>
+                        <p className="text-xs text-gray-500 truncate">{launch.launch_base.name}</p>
                       </div>
                     </Link>
                   ))}
