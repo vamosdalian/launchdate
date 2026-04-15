@@ -1,5 +1,29 @@
 # LaunchDate Deployment Guide
 
+## GitHub Release Automation
+
+The repository now includes a GitHub Actions workflow at `.github/workflows/backend-release.yml`.
+
+When a GitHub Release is published:
+
+- The workflow builds the backend image from `services/backend/Dockerfile`.
+- The image is pushed to GitHub Container Registry as `ghcr.io/<owner>/launchdate-backend`.
+- The published image always receives the release tag, for example `ghcr.io/<owner>/launchdate-backend:v1.2.0`.
+- Non-prerelease versions also receive the `latest` tag.
+- If the release body is empty, the workflow asks GitHub to generate the default release notes and writes them back to the release.
+
+Repository requirements:
+
+- GitHub Actions must be enabled.
+- The workflow must be allowed to use `GITHUB_TOKEN` with read and write permissions.
+- The actor publishing the release must have permission to publish packages for the repository namespace.
+
+Release publishing recommendations:
+
+- Create a tag such as `v1.2.0` before publishing the release.
+- If you want GitHub's default release notes, leave the release description empty when publishing; the workflow will fill it automatically.
+- If you manually write release notes, the workflow will preserve your content and only publish the container image.
+
 This document describes a production deployment from zero for the current monorepo, using the following architecture:
 
 - MongoDB: Mongo Atlas
