@@ -1,5 +1,40 @@
 # LaunchDate Deployment Guide
 
+## GitHub Release Automation
+
+The repository now includes a GitHub Actions workflow at `.github/workflows/backend-release.yml`.
+
+When a GitHub Release is published:
+
+- The workflow builds the backend image from `services/backend/Dockerfile`.
+- The image is pushed to GitHub Container Registry as `ghcr.io/<owner>/launchdate-backend`.
+- The published image always receives the release tag, for example `ghcr.io/<owner>/launchdate-backend:v1.2.0`.
+- Non-prerelease versions also receive the `latest` tag.
+- If the release body is empty, the workflow asks GitHub to generate the default release notes and writes them back to the release.
+
+Repository requirements:
+
+- GitHub Actions must be enabled.
+- The workflow must be allowed to use `GITHUB_TOKEN` with read and write permissions.
+- The actor publishing the release must have permission to publish packages for the repository namespace.
+
+Optional registry secrets:
+
+- `GHCR_TOKEN`: optional override for package publishing when the default `GITHUB_TOKEN` cannot write to GHCR.
+- `GHCR_USERNAME`: optional username paired with `GHCR_TOKEN`.
+
+If release publishing fails with `permission_denied: write_package`:
+
+- Check repository Settings -> Actions -> General -> Workflow permissions and set it to `Read and write permissions`.
+- If the package `ghcr.io/<owner>/launchdate-backend` already exists, open its package settings and grant this repository Actions access.
+- If your organization or existing package policy blocks `GITHUB_TOKEN`, create `GHCR_TOKEN` with package write permission and add `GHCR_USERNAME` for the token owner.
+
+Release publishing recommendations:
+
+- Create a tag such as `v1.2.0` before publishing the release.
+- If you want GitHub's default release notes, leave the release description empty when publishing; the workflow will fill it automatically.
+- If you manually write release notes, the workflow will preserve your content and only publish the container image.
+
 This document describes a production deployment from zero for the current monorepo, using the following architecture:
 
 - MongoDB: Mongo Atlas
