@@ -18,6 +18,17 @@ Repository requirements:
 - The workflow must be allowed to use `GITHUB_TOKEN` with read and write permissions.
 - The actor publishing the release must have permission to publish packages for the repository namespace.
 
+Optional registry secrets:
+
+- `GHCR_TOKEN`: optional override for package publishing when the default `GITHUB_TOKEN` cannot write to GHCR.
+- `GHCR_USERNAME`: optional username paired with `GHCR_TOKEN`.
+
+If release publishing fails with `permission_denied: write_package`:
+
+- Check repository Settings -> Actions -> General -> Workflow permissions and set it to `Read and write permissions`.
+- If the package `ghcr.io/<owner>/launchdate-backend` already exists, open its package settings and grant this repository Actions access.
+- If your organization or existing package policy blocks `GITHUB_TOKEN`, create `GHCR_TOKEN` with package write permission and add `GHCR_USERNAME` for the token owner.
+
 Release publishing recommendations:
 
 - Create a tag such as `v1.2.0` before publishing the release.
