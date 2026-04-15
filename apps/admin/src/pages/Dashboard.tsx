@@ -102,7 +102,6 @@ export default function Dashboard() {
 
   const fetchStats = useCallback(async () => {
     try {
-      setLoading(true);
       setError(null);
       const data = await statsService.getStats();
       setStats(data);
