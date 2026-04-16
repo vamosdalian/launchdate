@@ -47,6 +47,9 @@ func main() {
 	if err := coreservice.EnsurePageBackgroundIndexes(); err != nil {
 		logrus.Fatalf("failed to ensure page background indexes: %v", err)
 	}
+	if err := coreservice.EnsurePublicIndexes(); err != nil {
+		logrus.Fatalf("failed to ensure public indexes: %v", err)
+	}
 	ll2server := ll2.NewLL2Service(cfg, db, hc)
 	ll2syncer := ll2datasyncer.NewLL2DataSyncer(cfg, ll2server, coreservice)
 	if err := ll2syncer.RestoreTasks(); err != nil {

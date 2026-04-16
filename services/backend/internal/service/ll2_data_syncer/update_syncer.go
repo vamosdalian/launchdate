@@ -107,6 +107,7 @@ func (s *UpdateSyncer) sync() {
 		task.CurrentOffset = 0
 		task.CurrentTotal = 0
 		task.MaxObservedLastUpdated = time.Time{}
+		s.core.InvalidatePublicCacheForSync(SyncTypeUpdate)
 	}
 
 	if err := s.saveTask(task); err != nil {

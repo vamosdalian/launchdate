@@ -313,6 +313,9 @@ func (ds *LL2DataSyncer) waitForSyncDone(syncType string, syncer Syncer) {
 	if err := ds.saveTask(task); err != nil {
 		logrus.Errorf("save sync task %s after completion failed: %v", syncType, err)
 	}
+	if task.Status == models.SyncTaskStatusCompleted {
+		ds.core.InvalidatePublicCacheForSync(syncType)
+	}
 
 	ds.runMu.Unlock()
 }

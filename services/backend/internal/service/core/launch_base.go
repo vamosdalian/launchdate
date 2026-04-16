@@ -231,161 +231,165 @@ func (m *MainService) GetLaunchBase(id int64) (models.LaunchBaseSerializer, erro
 }
 
 func (m *MainService) GetPublicLaunchBases(page int, search string) (models.PublicLaunchBasePage, error) {
-	const pageSize = 20
+	return loadPublicCached(m.publicCache, m.publicListCacheOptions(publicDomainLaunchBase, page, search, nil), func() (models.PublicLaunchBasePage, error) {
+		const pageSize = 20
 
-	launchBaseList, err := m.GetLaunchBases(LaunchBaseQuery{
-		Limit:     pageSize,
-		Offset:    page * pageSize,
-		Search:    search,
-		SortBy:    "name",
-		SortOrder: 1,
-	})
-	if err != nil {
-		return models.PublicLaunchBasePage{}, err
-	}
-
-	bases := make([]models.PublicLaunchBaseListItem, 0, len(launchBaseList.Launches))
-	for _, launchBase := range launchBaseList.Launches {
-		if launchBase.ID == 0 {
-			continue
+		launchBaseList, err := m.GetLaunchBases(LaunchBaseQuery{
+			Limit:     pageSize,
+			Offset:    page * pageSize,
+			Search:    search,
+			SortBy:    "name",
+			SortOrder: 1,
+		})
+		if err != nil {
+			return models.PublicLaunchBasePage{}, err
 		}
-		bases = append(bases, buildPublicLaunchBaseListItem(models.LaunchBase{ID: launchBase.ID}, launchBase.Data))
-	}
 
-	return models.PublicLaunchBasePage{
-		Count:       launchBaseList.Count,
-		LaunchBases: bases,
-	}, nil
+		bases := make([]models.PublicLaunchBaseListItem, 0, len(launchBaseList.Launches))
+		for _, launchBase := range launchBaseList.Launches {
+			if launchBase.ID == 0 {
+				continue
+			}
+			bases = append(bases, buildPublicLaunchBaseListItem(models.LaunchBase{ID: launchBase.ID}, launchBase.Data))
+		}
+
+		return models.PublicLaunchBasePage{
+			Count:       launchBaseList.Count,
+			LaunchBases: bases,
+		}, nil
+	})
 }
 
 func (m *MainService) GetPublicLaunchBase(id int64) (models.PublicLaunchBaseView, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	return loadPublicCached(m.publicCache, m.publicDetailCacheOptions(publicDomainLaunchBase, id), func() (models.PublicLaunchBaseView, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-	var base models.LaunchBase
-	err := m.mc.Collection(COLLECTION_LAUNCH_BASE).FindOne(ctx, bson.M{"id": id}).Decode(&base)
-	if err != nil {
-		return models.PublicLaunchBaseView{}, err
-	}
-
-	var doc models.LL2LocationSerializerWithPads
-	if err := m.mc.Collection(COLLECTION_LL2_LOCATION).FindOne(ctx, bson.M{"id": int(base.ExternalID)}).Decode(&doc); err != nil {
-		return models.PublicLaunchBaseView{}, err
-	}
-
-	baseFilter := bson.M{"pad.location.id": int(base.ExternalID)}
-	launchCursor, err := m.mc.Collection(COLLECTION_LL2_LAUNCH).Find(
-		ctx,
-		baseFilter,
-		options.Find().SetSort(bson.D{{Key: "net", Value: -1}}).SetLimit(6),
-	)
-	if err != nil {
-		return models.PublicLaunchBaseView{}, err
-	}
-	defer launchCursor.Close(ctx)
-
-	ll2Launches := make([]models.LL2LaunchDetailed, 0)
-	launchExternalIDs := make([]string, 0)
-	rocketExternalIDs := make([]int64, 0)
-	agencyExternalIDs := make([]int64, 0)
-	for launchCursor.Next(ctx) {
-		var ll2Launch models.LL2LaunchDetailed
-		if err := launchCursor.Decode(&ll2Launch); err != nil {
+		var base models.LaunchBase
+		err := m.mc.Collection(COLLECTION_LAUNCH_BASE).FindOne(ctx, bson.M{"id": id}).Decode(&base)
+		if err != nil {
 			return models.PublicLaunchBaseView{}, err
 		}
-		ll2Launches = append(ll2Launches, ll2Launch)
-		launchExternalIDs = append(launchExternalIDs, ll2Launch.ID)
-		if ll2Launch.Rocket.Configuration.ID != 0 {
-			rocketExternalIDs = append(rocketExternalIDs, int64(ll2Launch.Rocket.Configuration.ID))
+
+		var doc models.LL2LocationSerializerWithPads
+		if err := m.mc.Collection(COLLECTION_LL2_LOCATION).FindOne(ctx, bson.M{"id": int(base.ExternalID)}).Decode(&doc); err != nil {
+			return models.PublicLaunchBaseView{}, err
 		}
-		if ll2Launch.LaunchServiceProvider.ID != 0 {
-			agencyExternalIDs = append(agencyExternalIDs, int64(ll2Launch.LaunchServiceProvider.ID))
+
+		baseFilter := bson.M{"pad.location.id": int(base.ExternalID)}
+		launchCursor, err := m.mc.Collection(COLLECTION_LL2_LAUNCH).Find(
+			ctx,
+			baseFilter,
+			options.Find().SetSort(bson.D{{Key: "net", Value: -1}}).SetLimit(6),
+		)
+		if err != nil {
+			return models.PublicLaunchBaseView{}, err
 		}
-	}
-	if err := launchCursor.Err(); err != nil {
-		return models.PublicLaunchBaseView{}, err
-	}
+		defer launchCursor.Close(ctx)
 
-	launchMap, err := m.loadLaunchMapByExternalIDs(ctx, launchExternalIDs)
-	if err != nil {
-		return models.PublicLaunchBaseView{}, err
-	}
-	rocketMap, err := m.loadRocketMapByExternalIDs(ctx, rocketExternalIDs)
-	if err != nil {
-		return models.PublicLaunchBaseView{}, err
-	}
-	launcherMap, err := m.loadLauncherConfigMapByExternalIDs(ctx, rocketExternalIDs)
-	if err != nil {
-		return models.PublicLaunchBaseView{}, err
-	}
-	agencyMap, err := m.loadAgencyMapByExternalIDs(ctx, agencyExternalIDs)
-	if err != nil {
-		return models.PublicLaunchBaseView{}, err
-	}
-	agencyDocMap, err := m.loadLL2AgencyMapByExternalIDs(ctx, agencyExternalIDs)
-	if err != nil {
-		return models.PublicLaunchBaseView{}, err
-	}
-	baseMap := map[int64]models.LaunchBase{base.ExternalID: base}
-
-	launches := make([]models.PublicLaunchSummary, 0, len(ll2Launches))
-	for _, ll2Launch := range ll2Launches {
-		launchSummary, include := m.buildPublicLaunchSummary(launchMap[ll2Launch.ID], ll2Launch, rocketMap, launcherMap, agencyMap, agencyDocMap, baseMap)
-		if !include {
-			continue
+		ll2Launches := make([]models.LL2LaunchDetailed, 0)
+		launchExternalIDs := make([]string, 0)
+		rocketExternalIDs := make([]int64, 0)
+		agencyExternalIDs := make([]int64, 0)
+		for launchCursor.Next(ctx) {
+			var ll2Launch models.LL2LaunchDetailed
+			if err := launchCursor.Decode(&ll2Launch); err != nil {
+				return models.PublicLaunchBaseView{}, err
+			}
+			ll2Launches = append(ll2Launches, ll2Launch)
+			launchExternalIDs = append(launchExternalIDs, ll2Launch.ID)
+			if ll2Launch.Rocket.Configuration.ID != 0 {
+				rocketExternalIDs = append(rocketExternalIDs, int64(ll2Launch.Rocket.Configuration.ID))
+			}
+			if ll2Launch.LaunchServiceProvider.ID != 0 {
+				agencyExternalIDs = append(agencyExternalIDs, int64(ll2Launch.LaunchServiceProvider.ID))
+			}
 		}
-		launches = append(launches, launchSummary)
-	}
+		if err := launchCursor.Err(); err != nil {
+			return models.PublicLaunchBaseView{}, err
+		}
 
-	launchCount64, err := m.mc.Collection(COLLECTION_LL2_LAUNCH).CountDocuments(ctx, baseFilter)
-	if err != nil {
-		return models.PublicLaunchBaseView{}, err
-	}
-	upcomingCount64, err := m.mc.Collection(COLLECTION_LL2_LAUNCH).CountDocuments(ctx, bson.M{
-		"pad.location.id": int(base.ExternalID),
-		"net":             bson.M{"$gte": time.Now().UTC().Format(time.RFC3339)},
-	})
-	if err != nil {
-		return models.PublicLaunchBaseView{}, err
-	}
-	successfulCount64, err := m.mc.Collection(COLLECTION_LL2_LAUNCH).CountDocuments(ctx, bson.M{
-		"pad.location.id": int(base.ExternalID),
-		"status.id":       3,
-	})
-	if err != nil {
-		return models.PublicLaunchBaseView{}, err
-	}
-	failedCount64, err := m.mc.Collection(COLLECTION_LL2_LAUNCH).CountDocuments(ctx, bson.M{
-		"pad.location.id": int(base.ExternalID),
-		"status.id":       4,
-	})
-	if err != nil {
-		return models.PublicLaunchBaseView{}, err
-	}
+		launchMap, err := m.loadLaunchMapByExternalIDs(ctx, launchExternalIDs)
+		if err != nil {
+			return models.PublicLaunchBaseView{}, err
+		}
+		rocketMap, err := m.loadRocketMapByExternalIDs(ctx, rocketExternalIDs)
+		if err != nil {
+			return models.PublicLaunchBaseView{}, err
+		}
+		launcherMap, err := m.loadLauncherConfigMapByExternalIDs(ctx, rocketExternalIDs)
+		if err != nil {
+			return models.PublicLaunchBaseView{}, err
+		}
+		agencyMap, err := m.loadAgencyMapByExternalIDs(ctx, agencyExternalIDs)
+		if err != nil {
+			return models.PublicLaunchBaseView{}, err
+		}
+		agencyDocMap, err := m.loadLL2AgencyMapByExternalIDs(ctx, agencyExternalIDs)
+		if err != nil {
+			return models.PublicLaunchBaseView{}, err
+		}
+		baseMap := map[int64]models.LaunchBase{base.ExternalID: base}
 
-	successRate := 0
-	resolvedCount := successfulCount64 + failedCount64
-	if resolvedCount > 0 {
-		successRate = int((float64(successfulCount64) * 100 / float64(resolvedCount)) + 0.5)
-	}
+		launches := make([]models.PublicLaunchSummary, 0, len(ll2Launches))
+		for _, ll2Launch := range ll2Launches {
+			launchSummary, include := m.buildPublicLaunchSummary(launchMap[ll2Launch.ID], ll2Launch, rocketMap, launcherMap, agencyMap, agencyDocMap, baseMap)
+			if !include {
+				continue
+			}
+			launches = append(launches, launchSummary)
+		}
 
-	basic := buildPublicLaunchBaseListItem(base, doc)
-	return models.PublicLaunchBaseView{
-		ID:          basic.ID,
-		Name:        basic.Name,
-		Location:    basic.Location,
-		Country:     basic.Country,
-		Description: basic.Description,
-		ImageURL:    basic.ImageURL,
-		Latitude:    basic.Latitude,
-		Longitude:   basic.Longitude,
-		Launches:    launches,
-		Stats: models.PublicLaunchBaseStats{
-			LaunchCount:         int(launchCount64),
-			UpcomingLaunchCount: int(upcomingCount64),
-			SuccessfulLaunches:  int(successfulCount64),
-			FailedLaunches:      int(failedCount64),
-			SuccessRate:         successRate,
-		},
-	}, nil
+		launchCount64, err := m.mc.Collection(COLLECTION_LL2_LAUNCH).CountDocuments(ctx, baseFilter)
+		if err != nil {
+			return models.PublicLaunchBaseView{}, err
+		}
+		upcomingCount64, err := m.mc.Collection(COLLECTION_LL2_LAUNCH).CountDocuments(ctx, bson.M{
+			"pad.location.id": int(base.ExternalID),
+			"net":             bson.M{"$gte": time.Now().UTC().Format(time.RFC3339)},
+		})
+		if err != nil {
+			return models.PublicLaunchBaseView{}, err
+		}
+		successfulCount64, err := m.mc.Collection(COLLECTION_LL2_LAUNCH).CountDocuments(ctx, bson.M{
+			"pad.location.id": int(base.ExternalID),
+			"status.id":       3,
+		})
+		if err != nil {
+			return models.PublicLaunchBaseView{}, err
+		}
+		failedCount64, err := m.mc.Collection(COLLECTION_LL2_LAUNCH).CountDocuments(ctx, bson.M{
+			"pad.location.id": int(base.ExternalID),
+			"status.id":       4,
+		})
+		if err != nil {
+			return models.PublicLaunchBaseView{}, err
+		}
+
+		successRate := 0
+		resolvedCount := successfulCount64 + failedCount64
+		if resolvedCount > 0 {
+			successRate = int((float64(successfulCount64) * 100 / float64(resolvedCount)) + 0.5)
+		}
+
+		basic := buildPublicLaunchBaseListItem(base, doc)
+		return models.PublicLaunchBaseView{
+			ID:          basic.ID,
+			Name:        basic.Name,
+			Location:    basic.Location,
+			Country:     basic.Country,
+			Description: basic.Description,
+			ImageURL:    basic.ImageURL,
+			Latitude:    basic.Latitude,
+			Longitude:   basic.Longitude,
+			Launches:    launches,
+			Stats: models.PublicLaunchBaseStats{
+				LaunchCount:         int(launchCount64),
+				UpcomingLaunchCount: int(upcomingCount64),
+				SuccessfulLaunches:  int(successfulCount64),
+				FailedLaunches:      int(failedCount64),
+				SuccessRate:         successRate,
+			},
+		}, nil
+	})
 }

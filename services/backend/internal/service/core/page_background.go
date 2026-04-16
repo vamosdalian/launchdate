@@ -29,41 +29,43 @@ func (s *MainService) EnsurePageBackgroundIndexes() error {
 }
 
 func (s *MainService) GetPageBackgrounds() ([]models.PageBackground, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	return loadPublicCached(s.publicCache, s.pageBackgroundCacheOptions(), func() ([]models.PageBackground, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-	cursor, err := s.mc.Collection(COLLECTION_PAGE_BACKGROUND).Find(ctx, bson.M{
-		"page_key": bson.M{"$in": pageBackgroundKeys()},
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer cursor.Close(ctx)
-
-	records := make(map[string]models.PageBackground, len(models.PageBackgroundDefinitions))
-	for cursor.Next(ctx) {
-		var record models.PageBackground
-		if err := cursor.Decode(&record); err != nil {
+		cursor, err := s.mc.Collection(COLLECTION_PAGE_BACKGROUND).Find(ctx, bson.M{
+			"page_key": bson.M{"$in": pageBackgroundKeys()},
+		})
+		if err != nil {
 			return nil, err
 		}
-		records[record.PageKey] = decoratePageBackground(record)
-	}
+		defer cursor.Close(ctx)
 
-	if err := cursor.Err(); err != nil {
-		return nil, err
-	}
-
-	pageBackgrounds := make([]models.PageBackground, 0, len(models.PageBackgroundDefinitions))
-	for _, definition := range models.PageBackgroundDefinitions {
-		if record, ok := records[definition.Key]; ok {
-			pageBackgrounds = append(pageBackgrounds, record)
-			continue
+		records := make(map[string]models.PageBackground, len(models.PageBackgroundDefinitions))
+		for cursor.Next(ctx) {
+			var record models.PageBackground
+			if err := cursor.Decode(&record); err != nil {
+				return nil, err
+			}
+			records[record.PageKey] = decoratePageBackground(record)
 		}
 
-		pageBackgrounds = append(pageBackgrounds, decoratePageBackground(models.PageBackground{PageKey: definition.Key}))
-	}
+		if err := cursor.Err(); err != nil {
+			return nil, err
+		}
 
-	return pageBackgrounds, nil
+		pageBackgrounds := make([]models.PageBackground, 0, len(models.PageBackgroundDefinitions))
+		for _, definition := range models.PageBackgroundDefinitions {
+			if record, ok := records[definition.Key]; ok {
+				pageBackgrounds = append(pageBackgrounds, record)
+				continue
+			}
+
+			pageBackgrounds = append(pageBackgrounds, decoratePageBackground(models.PageBackground{PageKey: definition.Key}))
+		}
+
+		return pageBackgrounds, nil
+	})
 }
 
 func (s *MainService) UpsertPageBackground(pageKey, backgroundImage string) (models.PageBackground, error) {
@@ -77,6 +79,8 @@ func (s *MainService) UpsertPageBackground(pageKey, backgroundImage string) (mod
 		if err := s.deletePageBackground(pageKey); err != nil {
 			return models.PageBackground{}, err
 		}
+
+		s.bumpPublicCacheDomains(publicDomainPageBackground)
 
 		return decoratePageBackground(models.PageBackground{PageKey: pageKey}), nil
 	}
@@ -106,6 +110,8 @@ func (s *MainService) UpsertPageBackground(pageKey, backgroundImage string) (mod
 	if err != nil {
 		return models.PageBackground{}, err
 	}
+
+	s.bumpPublicCacheDomains(publicDomainPageBackground)
 
 	var record models.PageBackground
 	if err := s.mc.Collection(COLLECTION_PAGE_BACKGROUND).FindOne(ctx, bson.M{"page_key": pageKey}).Decode(&record); err != nil {

@@ -236,158 +236,164 @@ func (m *MainService) UpdateRocket(r *models.Rocket) error {
 		return mongo.ErrNoDocuments
 	}
 
+	m.bumpPublicCacheDomains(publicDomainRocket, publicDomainLaunch)
+
 	return nil
 }
 
 func (m *MainService) GetPublicRockets(page int, search string) (models.PublicRocketPage, error) {
-	const pageSize = 20
+	return loadPublicCached(m.publicCache, m.publicListCacheOptions(publicDomainRocket, page, search, nil), func() (models.PublicRocketPage, error) {
+		const pageSize = 20
 
-	rocketList, err := m.GetRockets(RocketQuery{
-		Limit:     pageSize,
-		Offset:    page * pageSize,
-		Search:    search,
-		SortBy:    "total_launch_count",
-		SortOrder: -1,
-	})
-	if err != nil {
-		return models.PublicRocketPage{}, err
-	}
-
-	rockets := make([]models.PublicRocketListItem, 0, len(rocketList.Rockets))
-	for _, rocket := range rocketList.Rockets {
-		if rocket.Rocket.ID == 0 {
-			continue
+		rocketList, err := m.GetRockets(RocketQuery{
+			Limit:     pageSize,
+			Offset:    page * pageSize,
+			Search:    search,
+			SortBy:    "total_launch_count",
+			SortOrder: -1,
+		})
+		if err != nil {
+			return models.PublicRocketPage{}, err
 		}
-		rockets = append(rockets, buildPublicRocketListItem(rocket.Rocket, rocket.Data))
-	}
 
-	return models.PublicRocketPage{
-		Count:   rocketList.Count,
-		Rockets: rockets,
-	}, nil
+		rockets := make([]models.PublicRocketListItem, 0, len(rocketList.Rockets))
+		for _, rocket := range rocketList.Rockets {
+			if rocket.Rocket.ID == 0 {
+				continue
+			}
+			rockets = append(rockets, buildPublicRocketListItem(rocket.Rocket, rocket.Data))
+		}
+
+		return models.PublicRocketPage{
+			Count:   rocketList.Count,
+			Rockets: rockets,
+		}, nil
+	})
 }
 
 func (m *MainService) GetPublicRocket(id int64) (models.PublicRocketView, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	return loadPublicCached(m.publicCache, m.publicDetailCacheOptions(publicDomainRocket, id), func() (models.PublicRocketView, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-	rocket, err := m.findRocketByCoreID(ctx, id)
-	if err != nil {
-		return models.PublicRocketView{}, err
-	}
-
-	var ll2Data models.LL2LauncherConfigDetailed
-	err = m.mc.Collection(COLLECTION_LL2_LAUNCHER).FindOne(ctx, bson.M{"id": rocket.ExternalID}).Decode(&ll2Data)
-	if err != nil {
-		return models.PublicRocketView{}, err
-	}
-
-	var company models.PublicCompanyRef
-	if ll2Data.Manufacturer.ID != 0 {
-		var agency models.Agency
-		err := m.mc.Collection(COLLECTION_AGENCY).FindOne(ctx, bson.M{"external_id": ll2Data.Manufacturer.ID}).Decode(&agency)
-		if err != nil && err != mongo.ErrNoDocuments {
+		rocket, err := m.findRocketByCoreID(ctx, id)
+		if err != nil {
 			return models.PublicRocketView{}, err
 		}
 
-		var agencyDoc *models.LL2AgencyDetailed
-		var ll2Agency models.LL2AgencyDetailed
-		err = m.mc.Collection(COLLECTION_LL2_AGENCY).FindOne(ctx, bson.M{"id": ll2Data.Manufacturer.ID}).Decode(&ll2Agency)
-		if err != nil && err != mongo.ErrNoDocuments {
+		var ll2Data models.LL2LauncherConfigDetailed
+		err = m.mc.Collection(COLLECTION_LL2_LAUNCHER).FindOne(ctx, bson.M{"id": rocket.ExternalID}).Decode(&ll2Data)
+		if err != nil {
 			return models.PublicRocketView{}, err
 		}
-		if err == nil {
-			agencyDoc = &ll2Agency
-		}
 
-		company = buildPublicCompanyRef(agency, ll2Data.Manufacturer.Name, agencyDoc)
-	}
-
-	launchLimit := 10
-	launchFilter := bson.M{"rocket.configuration.id": rocket.ExternalID}
-	launchOpts := options.Find().SetSort(bson.D{{Key: "net", Value: -1}}).SetLimit(int64(launchLimit))
-
-	launchCursor, err := m.mc.Collection(COLLECTION_LL2_LAUNCH).Find(ctx, launchFilter, launchOpts)
-	if err != nil {
-		return models.PublicRocketView{}, err
-	}
-	defer launchCursor.Close(ctx)
-
-	var ll2Launches []models.LL2LaunchDetailed
-	if err = launchCursor.All(ctx, &ll2Launches); err != nil {
-		return models.PublicRocketView{}, err
-	}
-
-	var publicLaunches []models.PublicLaunchSummary
-	if len(ll2Launches) > 0 {
-		externalIDs := make([]string, 0, len(ll2Launches))
-		agencyExternalIDs := make([]int64, 0, len(ll2Launches))
-		baseExternalIDs := make([]int64, 0, len(ll2Launches))
-		for _, l := range ll2Launches {
-			externalIDs = append(externalIDs, l.ID)
-			if l.LaunchServiceProvider.ID != 0 {
-				agencyExternalIDs = append(agencyExternalIDs, int64(l.LaunchServiceProvider.ID))
+		var company models.PublicCompanyRef
+		if ll2Data.Manufacturer.ID != 0 {
+			var agency models.Agency
+			err := m.mc.Collection(COLLECTION_AGENCY).FindOne(ctx, bson.M{"external_id": ll2Data.Manufacturer.ID}).Decode(&agency)
+			if err != nil && err != mongo.ErrNoDocuments {
+				return models.PublicRocketView{}, err
 			}
-			if l.Pad.Location.ID != 0 {
-				baseExternalIDs = append(baseExternalIDs, int64(l.Pad.Location.ID))
+
+			var agencyDoc *models.LL2AgencyDetailed
+			var ll2Agency models.LL2AgencyDetailed
+			err = m.mc.Collection(COLLECTION_LL2_AGENCY).FindOne(ctx, bson.M{"id": ll2Data.Manufacturer.ID}).Decode(&ll2Agency)
+			if err != nil && err != mongo.ErrNoDocuments {
+				return models.PublicRocketView{}, err
 			}
-		}
-
-		launchMap, err := m.loadLaunchMapByExternalIDs(ctx, externalIDs)
-		if err != nil {
-			return models.PublicRocketView{}, err
-		}
-		agencyMap, err := m.loadAgencyMapByExternalIDs(ctx, agencyExternalIDs)
-		if err != nil {
-			return models.PublicRocketView{}, err
-		}
-		agencyDocMap, err := m.loadLL2AgencyMapByExternalIDs(ctx, agencyExternalIDs)
-		if err != nil {
-			return models.PublicRocketView{}, err
-		}
-		baseMap, err := m.loadLaunchBaseMapByExternalIDs(ctx, baseExternalIDs)
-		if err != nil {
-			return models.PublicRocketView{}, err
-		}
-		rocketMap := map[int64]models.Rocket{rocket.ExternalID: rocket}
-		launcherMap := map[int64]models.LL2LauncherConfigNormal{rocket.ExternalID: ll2Data.LL2LauncherConfigNormal}
-
-		for _, ll2 := range ll2Launches {
-			launchSummary, include := m.buildPublicLaunchSummary(launchMap[ll2.ID], ll2, rocketMap, launcherMap, agencyMap, agencyDocMap, baseMap)
-			if !include {
-				continue
+			if err == nil {
+				agencyDoc = &ll2Agency
 			}
-			publicLaunches = append(publicLaunches, launchSummary)
-		}
-	} else {
-		publicLaunches = []models.PublicLaunchSummary{}
-	}
 
-	return models.PublicRocketView{
-		ID:              publicID(rocket.ID),
-		Name:            ll2Data.Name,
-		Description:     ll2Data.Description,
-		Active:          ll2Data.Active,
-		Reusable:        ll2Data.Reusable,
-		LaunchImage:     resolveRocketLaunch(rocket, ll2Data.Image),
-		MainImage:       resolveRocketMain(rocket, ll2Data.Image),
-		ImageList:       rocket.ImageList,
-		Company:         company,
-		Launches:        publicLaunches,
-		LaunchCost:      float64(ll2Data.LaunchCost),
-		Diameter:        ll2Data.Diameter,
-		Length:          ll2Data.Length,
-		LiftoffThrust:   ll2Data.ToThrust,
-		LaunchMass:      ll2Data.LaunchMass,
-		LeoCapacity:     ll2Data.LeoCapacity,
-		GtoCapacity:     ll2Data.GtoCapacity,
-		GeoCapacity:     ll2Data.GeoCapacity,
-		SsoCapacity:     ll2Data.SsoCapacity,
-		TotalLaunches:   ll2Data.TotalLaunchCount,
-		SuccessLaunches: ll2Data.SuccessfulLaunches,
-		FailureLaunches: ll2Data.FailedLaunches,
-		TotalLandings:   ll2Data.AttemptedLandings,
-		SuccessLandings: ll2Data.SuccessfulLandings,
-		FailureLandings: ll2Data.FailedLandings,
-	}, nil
+			company = buildPublicCompanyRef(agency, ll2Data.Manufacturer.Name, agencyDoc)
+		}
+
+		launchLimit := 10
+		launchFilter := bson.M{"rocket.configuration.id": rocket.ExternalID}
+		launchOpts := options.Find().SetSort(bson.D{{Key: "net", Value: -1}}).SetLimit(int64(launchLimit))
+
+		launchCursor, err := m.mc.Collection(COLLECTION_LL2_LAUNCH).Find(ctx, launchFilter, launchOpts)
+		if err != nil {
+			return models.PublicRocketView{}, err
+		}
+		defer launchCursor.Close(ctx)
+
+		var ll2Launches []models.LL2LaunchDetailed
+		if err = launchCursor.All(ctx, &ll2Launches); err != nil {
+			return models.PublicRocketView{}, err
+		}
+
+		var publicLaunches []models.PublicLaunchSummary
+		if len(ll2Launches) > 0 {
+			externalIDs := make([]string, 0, len(ll2Launches))
+			agencyExternalIDs := make([]int64, 0, len(ll2Launches))
+			baseExternalIDs := make([]int64, 0, len(ll2Launches))
+			for _, l := range ll2Launches {
+				externalIDs = append(externalIDs, l.ID)
+				if l.LaunchServiceProvider.ID != 0 {
+					agencyExternalIDs = append(agencyExternalIDs, int64(l.LaunchServiceProvider.ID))
+				}
+				if l.Pad.Location.ID != 0 {
+					baseExternalIDs = append(baseExternalIDs, int64(l.Pad.Location.ID))
+				}
+			}
+
+			launchMap, err := m.loadLaunchMapByExternalIDs(ctx, externalIDs)
+			if err != nil {
+				return models.PublicRocketView{}, err
+			}
+			agencyMap, err := m.loadAgencyMapByExternalIDs(ctx, agencyExternalIDs)
+			if err != nil {
+				return models.PublicRocketView{}, err
+			}
+			agencyDocMap, err := m.loadLL2AgencyMapByExternalIDs(ctx, agencyExternalIDs)
+			if err != nil {
+				return models.PublicRocketView{}, err
+			}
+			baseMap, err := m.loadLaunchBaseMapByExternalIDs(ctx, baseExternalIDs)
+			if err != nil {
+				return models.PublicRocketView{}, err
+			}
+			rocketMap := map[int64]models.Rocket{rocket.ExternalID: rocket}
+			launcherMap := map[int64]models.LL2LauncherConfigNormal{rocket.ExternalID: ll2Data.LL2LauncherConfigNormal}
+
+			for _, ll2 := range ll2Launches {
+				launchSummary, include := m.buildPublicLaunchSummary(launchMap[ll2.ID], ll2, rocketMap, launcherMap, agencyMap, agencyDocMap, baseMap)
+				if !include {
+					continue
+				}
+				publicLaunches = append(publicLaunches, launchSummary)
+			}
+		} else {
+			publicLaunches = []models.PublicLaunchSummary{}
+		}
+
+		return models.PublicRocketView{
+			ID:              publicID(rocket.ID),
+			Name:            ll2Data.Name,
+			Description:     ll2Data.Description,
+			Active:          ll2Data.Active,
+			Reusable:        ll2Data.Reusable,
+			LaunchImage:     resolveRocketLaunch(rocket, ll2Data.Image),
+			MainImage:       resolveRocketMain(rocket, ll2Data.Image),
+			ImageList:       rocket.ImageList,
+			Company:         company,
+			Launches:        publicLaunches,
+			LaunchCost:      float64(ll2Data.LaunchCost),
+			Diameter:        ll2Data.Diameter,
+			Length:          ll2Data.Length,
+			LiftoffThrust:   ll2Data.ToThrust,
+			LaunchMass:      ll2Data.LaunchMass,
+			LeoCapacity:     ll2Data.LeoCapacity,
+			GtoCapacity:     ll2Data.GtoCapacity,
+			GeoCapacity:     ll2Data.GeoCapacity,
+			SsoCapacity:     ll2Data.SsoCapacity,
+			TotalLaunches:   ll2Data.TotalLaunchCount,
+			SuccessLaunches: ll2Data.SuccessfulLaunches,
+			FailureLaunches: ll2Data.FailedLaunches,
+			TotalLandings:   ll2Data.AttemptedLandings,
+			SuccessLandings: ll2Data.SuccessfulLandings,
+			FailureLandings: ll2Data.FailedLandings,
+		}, nil
+	})
 }

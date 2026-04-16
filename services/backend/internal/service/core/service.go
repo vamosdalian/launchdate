@@ -11,15 +11,17 @@ import (
 )
 
 type MainService struct {
-	mc *db.MongoDB
-	sn *snowflake.Node
+	mc          *db.MongoDB
+	sn          *snowflake.Node
+	publicCache *publicCacheManager
 }
 
 func NewMainService(mc *db.MongoDB) *MainService {
 	node, _ := snowflake.NewNode(0)
 	return &MainService{
-		mc: mc,
-		sn: node,
+		mc:          mc,
+		sn:          node,
+		publicCache: newPublicCacheManager(),
 	}
 }
 
