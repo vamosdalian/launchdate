@@ -34,3 +34,6 @@ coverage.out
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+apps/web/.wrangler/
+apps/admin/.wrangler/
