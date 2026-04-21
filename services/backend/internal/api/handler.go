@@ -10,6 +10,7 @@ import (
 	"github.com/vamosdalian/launchdate-backend/internal/service/image"
 	"github.com/vamosdalian/launchdate-backend/internal/service/ll2"
 	ll2datasyncer "github.com/vamosdalian/launchdate-backend/internal/service/ll2_data_syncer"
+	"github.com/vamosdalian/launchdate-backend/internal/service/subscription"
 	"github.com/vamosdalian/launchdate-backend/internal/util"
 )
 
@@ -22,10 +23,12 @@ type Handler struct {
 	authHandler  *AuthHandler
 	jwtM         *util.JWTManager
 	imageService *image.ImageService
+	subscription *subscription.Service
 }
 
 func NewHandler(logger *logrus.Logger, cfg *config.Config, db *db.MongoDB, ll2server *ll2.LL2Service,
-	ll2syncer *ll2datasyncer.LL2DataSyncer, core *core.MainService, image *image.ImageService) *Handler {
+	ll2syncer *ll2datasyncer.LL2DataSyncer, core *core.MainService, image *image.ImageService,
+	subscriptionService *subscription.Service) *Handler {
 	isProduction := cfg.Server.Env == config.ENV_PRODUCTION
 	jwtManager := util.NewJWTManager(
 		cfg.Auth.JWTSecret,
@@ -45,6 +48,7 @@ func NewHandler(logger *logrus.Logger, cfg *config.Config, db *db.MongoDB, ll2se
 		authHandler:  authHandler,
 		jwtM:         jwtManager,
 		imageService: image,
+		subscription: subscriptionService,
 	}
 }
 

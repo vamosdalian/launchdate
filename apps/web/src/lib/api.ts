@@ -7,6 +7,11 @@ interface ApiEnvelope {
   data?: unknown;
 }
 
+interface ApiRequestOptions {
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+  body?: unknown;
+}
+
 function isApiEnvelope(value: unknown): value is ApiEnvelope {
   return (
     typeof value === 'object' &&
@@ -19,8 +24,14 @@ function isApiEnvelope(value: unknown): value is ApiEnvelope {
 }
 
 // Generic API fetch wrapper
-async function apiFetch<T>(endpoint: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`);
+async function apiRequest<T>(endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    method: options.method ?? 'GET',
+    headers: options.body === undefined ? undefined : {
+      'Content-Type': 'application/json',
+    },
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+  });
 
   const payload: unknown = await response.json();
 
@@ -39,4 +50,15 @@ async function apiFetch<T>(endpoint: string): Promise<T> {
   return payload as T;
 }
 
-export { API_BASE_URL, apiFetch };
+async function apiFetch<T>(endpoint: string): Promise<T> {
+  return apiRequest<T>(endpoint);
+}
+
+async function apiPost<T>(endpoint: string, body: unknown): Promise<T> {
+  return apiRequest<T>(endpoint, {
+    method: 'POST',
+    body,
+  });
+}
+
+export { API_BASE_URL, apiFetch, apiPost };
