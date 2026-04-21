@@ -21,6 +21,7 @@ type Config struct {
 	MongodbDatabase    string   `env:"MONGODB_DATABASE"`
 	LL2URLPrefix       string   `env:"LL2_URL_PREFIX"`
 	LL2RequestInterval int      `env:"LL2_REQUEST_INTERVAL, default=5"` // in seconds
+	Email              EmailConfig
 }
 
 // ServerConfig holds server configuration
@@ -46,6 +47,13 @@ type S3Config struct {
 	AccessKey string `env:"S3_ACCESS_KEY"`
 	SecretKey string `env:"S3_SECRET_KEY"`
 	Domain    string `env:"S3_DOMAIN"`
+}
+
+// EmailConfig holds email configuration
+type EmailConfig struct {
+	ResendAPIKey string `env:"RESEND_API_KEY"`
+	From         string `env:"EMAIL_FROM"`
+	WebBaseURL   string `env:"EMAIL_WEB_BASE_URL"`
 }
 
 // Load loads configuration from environment variables

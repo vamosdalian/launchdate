@@ -17,6 +17,7 @@ import (
 	"github.com/vamosdalian/launchdate-backend/internal/service/image"
 	"github.com/vamosdalian/launchdate-backend/internal/service/ll2"
 	ll2datasyncer "github.com/vamosdalian/launchdate-backend/internal/service/ll2_data_syncer"
+	"github.com/vamosdalian/launchdate-backend/internal/service/subscription"
 	"github.com/vamosdalian/launchdate-backend/internal/util"
 )
 
@@ -61,8 +62,13 @@ func main() {
 		logrus.Fatalf("failed to create s3 client: %v", err)
 	}
 	imageService := image.NewImageService(s3Client, db, cfg.ImageConf.Bucket, cfg.ImageDomain)
+	emailSender := subscription.NewResendEmailSender(cfg.Email.ResendAPIKey, cfg.Email.From)
+	subscriptionService := subscription.NewService(db, logrus.StandardLogger(), emailSender, cfg.Email.WebBaseURL)
+	if err := subscriptionService.EnsureIndexes(context.Background()); err != nil {
+		logrus.Fatalf("failed to ensure subscription indexes: %v", err)
+	}
 
-	handler := api.NewHandler(logrus.StandardLogger(), cfg, db, ll2server, ll2syncer, coreservice, imageService)
+	handler := api.NewHandler(logrus.StandardLogger(), cfg, db, ll2server, ll2syncer, coreservice, imageService, subscriptionService)
 	router := api.SetupRouter(handler)
 
 	// Create HTTP server

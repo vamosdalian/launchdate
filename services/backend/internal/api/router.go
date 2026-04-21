@@ -28,6 +28,8 @@ func SetupRouter(handler *Handler) *gin.Engine {
 		apiV1.GET("/companies/:id", handler.GetPublicCompanyByID)
 		apiV1.GET("/launch-bases", handler.GetPublicLaunchBases)
 		apiV1.GET("/launch-bases/:id", handler.GetPublicLaunchBaseByID)
+		apiV1.POST("/subscriptions", handler.Subscribe)
+		apiV1.GET("/subscriptions/unsubscribe", handler.Unsubscribe)
 
 		auth := apiV1.Group("/auth")
 		{
